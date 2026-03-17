@@ -1,0 +1,1531 @@
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MapPin, Navigation, Check, RotateCcw, Search, MapPinned, Building2, Map, ChevronDown, Globe } from 'lucide-react-native';
+import type { MapPressEvent, Region } from 'react-native-maps';
+import * as ExpoLocation from 'expo-location';
+import { useRouter } from 'expo-router';
+import NativeMapView from './NativeMapView';
+
+import { useTargetLocation } from '@/context/TargetLocationContext';
+import { Location, KOTEL } from '@/constants/locations';
+import { City, WORLD_CITIES, Continent } from '@/constants/cities';
+import { searchCitiesApi, fetchCitiesByCountry, fetchTopCities } from '@/services/citiesApi';
+import Colors from '@/constants/colors';
+import { useLanguage } from '@/context/LanguageContext';
+import type { DistanceUnit } from '@/context/LanguageContext';
+
+interface PopularLocation {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  description: string;
+  country: string;
+  distance?: number;
+}
+
+const POPULAR_LANDMARKS: PopularLocation[] = [
+  { id: 'eiffel', name: 'Eiffel Tower', latitude: 48.8584, longitude: 2.2945, description: 'Paris, France', country: 'France' },
+  { id: 'louvre', name: 'Louvre Museum', latitude: 48.8606, longitude: 2.3376, description: 'Paris, France', country: 'France' },
+  { id: 'notre-dame', name: 'Notre-Dame', latitude: 48.8530, longitude: 2.3499, description: 'Paris, France', country: 'France' },
+  { id: 'versailles', name: 'Palace of Versailles', latitude: 48.8049, longitude: 2.1204, description: 'Versailles, France', country: 'France' },
+  { id: 'mont-saint-michel', name: 'Mont Saint-Michel', latitude: 48.6361, longitude: -1.5115, description: 'Normandy, France', country: 'France' },
+  { id: 'statue-liberty', name: 'Statue of Liberty', latitude: 40.6892, longitude: -74.0445, description: 'New York, USA', country: 'United States' },
+  { id: 'empire-state', name: 'Empire State Building', latitude: 40.7484, longitude: -73.9857, description: 'New York, USA', country: 'United States' },
+  { id: 'times-square', name: 'Times Square', latitude: 40.7580, longitude: -73.9855, description: 'New York, USA', country: 'United States' },
+  { id: 'central-park', name: 'Central Park', latitude: 40.7829, longitude: -73.9654, description: 'New York, USA', country: 'United States' },
+  { id: 'golden-gate', name: 'Golden Gate Bridge', latitude: 37.8199, longitude: -122.4783, description: 'San Francisco, USA', country: 'United States' },
+  { id: 'hollywood', name: 'Hollywood Sign', latitude: 34.1341, longitude: -118.3215, description: 'Los Angeles, USA', country: 'United States' },
+  { id: 'grand-canyon', name: 'Grand Canyon', latitude: 36.1069, longitude: -112.1129, description: 'Arizona, USA', country: 'United States' },
+  { id: 'white-house', name: 'White House', latitude: 38.8977, longitude: -77.0365, description: 'Washington DC, USA', country: 'United States' },
+  { id: 'las-vegas-strip', name: 'Las Vegas Strip', latitude: 36.1147, longitude: -115.1728, description: 'Las Vegas, USA', country: 'United States' },
+  { id: 'disney-world', name: 'Walt Disney World', latitude: 28.3852, longitude: -81.5639, description: 'Orlando, USA', country: 'United States' },
+  { id: 'big-ben', name: 'Big Ben', latitude: 51.5007, longitude: -0.1246, description: 'London, UK', country: 'United Kingdom' },
+  { id: 'tower-bridge', name: 'Tower Bridge', latitude: 51.5055, longitude: -0.0754, description: 'London, UK', country: 'United Kingdom' },
+  { id: 'buckingham', name: 'Buckingham Palace', latitude: 51.5014, longitude: -0.1419, description: 'London, UK', country: 'United Kingdom' },
+  { id: 'stonehenge', name: 'Stonehenge', latitude: 51.1789, longitude: -1.8262, description: 'Wiltshire, UK', country: 'United Kingdom' },
+  { id: 'edinburgh-castle', name: 'Edinburgh Castle', latitude: 55.9486, longitude: -3.1999, description: 'Edinburgh, UK', country: 'United Kingdom' },
+  { id: 'colosseum', name: 'Colosseum', latitude: 41.8902, longitude: 12.4922, description: 'Rome, Italy', country: 'Italy' },
+  { id: 'tower-pisa', name: 'Leaning Tower of Pisa', latitude: 43.7230, longitude: 10.3966, description: 'Pisa, Italy', country: 'Italy' },
+  { id: 'vatican', name: 'Vatican City', latitude: 41.9029, longitude: 12.4534, description: 'Rome, Italy', country: 'Italy' },
+  { id: 'trevi-fountain', name: 'Trevi Fountain', latitude: 41.9009, longitude: 12.4833, description: 'Rome, Italy', country: 'Italy' },
+  { id: 'venice-rialto', name: 'Rialto Bridge', latitude: 45.4380, longitude: 12.3359, description: 'Venice, Italy', country: 'Italy' },
+  { id: 'duomo-florence', name: 'Florence Cathedral', latitude: 43.7731, longitude: 11.2560, description: 'Florence, Italy', country: 'Italy' },
+  { id: 'taj-mahal', name: 'Taj Mahal', latitude: 27.1751, longitude: 78.0421, description: 'Agra, India', country: 'India' },
+  { id: 'india-gate', name: 'India Gate', latitude: 28.6129, longitude: 77.2295, description: 'New Delhi, India', country: 'India' },
+  { id: 'gateway-india', name: 'Gateway of India', latitude: 18.9220, longitude: 72.8347, description: 'Mumbai, India', country: 'India' },
+  { id: 'red-fort', name: 'Red Fort', latitude: 28.6562, longitude: 77.2410, description: 'Delhi, India', country: 'India' },
+  { id: 'great-wall', name: 'Great Wall', latitude: 40.4319, longitude: 116.5704, description: 'Beijing, China', country: 'China' },
+  { id: 'forbidden-city', name: 'Forbidden City', latitude: 39.9163, longitude: 116.3972, description: 'Beijing, China', country: 'China' },
+  { id: 'terracotta-army', name: 'Terracotta Army', latitude: 34.3848, longitude: 109.2734, description: "Xi'an, China", country: 'China' },
+  { id: 'oriental-pearl', name: 'Oriental Pearl Tower', latitude: 31.2397, longitude: 121.4998, description: 'Shanghai, China', country: 'China' },
+  { id: 'sydney-opera', name: 'Sydney Opera House', latitude: -33.8568, longitude: 151.2153, description: 'Sydney, Australia', country: 'Australia' },
+  { id: 'harbour-bridge', name: 'Sydney Harbour Bridge', latitude: -33.8523, longitude: 151.2108, description: 'Sydney, Australia', country: 'Australia' },
+  { id: 'uluru', name: 'Uluru (Ayers Rock)', latitude: -25.3444, longitude: 131.0369, description: 'Northern Territory, Australia', country: 'Australia' },
+  { id: 'great-barrier-reef', name: 'Great Barrier Reef', latitude: -18.2871, longitude: 147.6992, description: 'Queensland, Australia', country: 'Australia' },
+  { id: 'christ-redeemer', name: 'Christ the Redeemer', latitude: -22.9519, longitude: -43.2105, description: 'Rio, Brazil', country: 'Brazil' },
+  { id: 'sugarloaf', name: 'Sugarloaf Mountain', latitude: -22.9492, longitude: -43.1545, description: 'Rio, Brazil', country: 'Brazil' },
+  { id: 'iguazu-falls', name: 'Iguazu Falls', latitude: -25.6953, longitude: -54.4367, description: 'Paraná, Brazil', country: 'Brazil' },
+  { id: 'machu-picchu', name: 'Machu Picchu', latitude: -13.1631, longitude: -72.5450, description: 'Cusco, Peru', country: 'Peru' },
+  { id: 'chichen-itza', name: 'Chichen Itza', latitude: 20.6843, longitude: -88.5678, description: 'Yucatán, Mexico', country: 'Mexico' },
+  { id: 'teotihuacan', name: 'Teotihuacan', latitude: 19.6925, longitude: -98.8438, description: 'Mexico City, Mexico', country: 'Mexico' },
+  { id: 'cn-tower', name: 'CN Tower', latitude: 43.6426, longitude: -79.3871, description: 'Toronto, Canada', country: 'Canada' },
+  { id: 'niagara-falls', name: 'Niagara Falls', latitude: 43.0962, longitude: -79.0377, description: 'Ontario, Canada', country: 'Canada' },
+  { id: 'petra', name: 'Petra', latitude: 30.3285, longitude: 35.4444, description: 'Ma\'an, Jordan', country: 'Jordan' },
+  { id: 'burj-khalifa', name: 'Burj Khalifa', latitude: 25.1972, longitude: 55.2744, description: 'Dubai, UAE', country: 'United Arab Emirates' },
+  { id: 'palm-jumeirah', name: 'Palm Jumeirah', latitude: 25.1124, longitude: 55.1390, description: 'Dubai, UAE', country: 'United Arab Emirates' },
+  { id: 'kotel', name: 'Western Wall', latitude: 31.7767, longitude: 35.2345, description: 'Jerusalem, Israel', country: 'Israel' },
+  { id: 'temple-mount', name: 'Temple Mount', latitude: 31.7780, longitude: 35.2354, description: 'Jerusalem, Israel', country: 'Israel' },
+  { id: 'dead-sea', name: 'Dead Sea', latitude: 31.5000, longitude: 35.5000, description: 'Israel/Jordan', country: 'Israel' },
+  { id: 'pyramids-giza', name: 'Pyramids of Giza', latitude: 29.9792, longitude: 31.1342, description: 'Cairo, Egypt', country: 'Egypt' },
+  { id: 'sphinx', name: 'Great Sphinx', latitude: 29.9753, longitude: 31.1376, description: 'Giza, Egypt', country: 'Egypt' },
+  { id: 'acropolis', name: 'Acropolis', latitude: 37.9715, longitude: 23.7267, description: 'Athens, Greece', country: 'Greece' },
+  { id: 'santorini', name: 'Santorini', latitude: 36.3932, longitude: 25.4615, description: 'Cyclades, Greece', country: 'Greece' },
+  { id: 'sagrada', name: 'Sagrada Familia', latitude: 41.4036, longitude: 2.1744, description: 'Barcelona, Spain', country: 'Spain' },
+  { id: 'alhambra', name: 'Alhambra', latitude: 37.1760, longitude: -3.5881, description: 'Granada, Spain', country: 'Spain' },
+  { id: 'park-guell', name: 'Park Güell', latitude: 41.4145, longitude: 2.1527, description: 'Barcelona, Spain', country: 'Spain' },
+  { id: 'berlin-wall', name: 'Berlin Wall Memorial', latitude: 52.5351, longitude: 13.3900, description: 'Berlin, Germany', country: 'Germany' },
+  { id: 'brandenburg', name: 'Brandenburg Gate', latitude: 52.5163, longitude: 13.3777, description: 'Berlin, Germany', country: 'Germany' },
+  { id: 'neuschwanstein', name: 'Neuschwanstein Castle', latitude: 47.5576, longitude: 10.7498, description: 'Bavaria, Germany', country: 'Germany' },
+  { id: 'anne-frank', name: 'Anne Frank House', latitude: 52.3752, longitude: 4.8840, description: 'Amsterdam, Netherlands', country: 'Netherlands' },
+  { id: 'charles-bridge', name: 'Charles Bridge', latitude: 50.0865, longitude: 14.4114, description: 'Prague, Czech Republic', country: 'Czech Republic' },
+  { id: 'mount-fuji', name: 'Mount Fuji', latitude: 35.3606, longitude: 138.7274, description: 'Honshu, Japan', country: 'Japan' },
+  { id: 'tokyo-tower', name: 'Tokyo Tower', latitude: 35.6586, longitude: 139.7454, description: 'Tokyo, Japan', country: 'Japan' },
+  { id: 'sensoji', name: 'Sensoji Temple', latitude: 35.7148, longitude: 139.7967, description: 'Tokyo, Japan', country: 'Japan' },
+  { id: 'fushimi-inari', name: 'Fushimi Inari Shrine', latitude: 34.9671, longitude: 135.7727, description: 'Kyoto, Japan', country: 'Japan' },
+  { id: 'angkor-wat', name: 'Angkor Wat', latitude: 13.4125, longitude: 103.8670, description: 'Siem Reap, Cambodia', country: 'Cambodia' },
+  { id: 'marina-bay', name: 'Marina Bay Sands', latitude: 1.2834, longitude: 103.8607, description: 'Singapore', country: 'Singapore' },
+  { id: 'petronas', name: 'Petronas Towers', latitude: 3.1578, longitude: 101.7117, description: 'Kuala Lumpur, Malaysia', country: 'Malaysia' },
+  { id: 'borobudur', name: 'Borobudur Temple', latitude: -7.6079, longitude: 110.2038, description: 'Java, Indonesia', country: 'Indonesia' },
+  { id: 'red-square', name: 'Red Square', latitude: 55.7539, longitude: 37.6208, description: 'Moscow, Russia', country: 'Russia' },
+  { id: 'kremlin', name: 'Moscow Kremlin', latitude: 55.7520, longitude: 37.6175, description: 'Moscow, Russia', country: 'Russia' },
+  { id: 'hermitage', name: 'Hermitage Museum', latitude: 59.9398, longitude: 30.3146, description: 'St. Petersburg, Russia', country: 'Russia' },
+];
+
+const PAGE_SIZE = 30;
+
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function formatDistance(km: number, unit: DistanceUnit = 'km'): string {
+  if (unit === 'mi') {
+    const miles = km * 0.621371;
+    if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
+    if (miles < 10) return `${miles.toFixed(1)} mi`;
+    return `${Math.round(miles)} mi`;
+  }
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  if (km < 10) return `${km.toFixed(1)} km`;
+  return `${Math.round(km)} km`;
+}
+
+export default function TargetScreen() {
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const { targetLocation, setTarget } = useTargetLocation();
+  const { t, distanceUnit } = useLanguage();
+  
+  const [latitudeInput, setLatitudeInput] = useState('');
+  const [longitudeInput, setLongitudeInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [citySearch, setCitySearch] = useState('');
+  
+  const [activeTab, setActiveTab] = useState<'nearby' | 'cities' | 'map' | 'coordinates'>('nearby');
+  const [mapRegion, setMapRegion] = useState<Region | null>(null);
+  const [selectedMapLocation, setSelectedMapLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [userCountry, setUserCountry] = useState<string | null>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [, setIsCitySearchFocused] = useState(false);
+  const [debouncedCitySearch, setDebouncedCitySearch] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [userCountryCode, setUserCountryCode] = useState<string | null>(null);
+  const [mapSearch, setMapSearch] = useState('');
+  const [mapSearching, setMapSearching] = useState(false);
+  const [mapSearchCoords, setMapSearchCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [reverseGeoName, setReverseGeoName] = useState<string | null>(null);
+  const [mapStyle] = useState<'streets' | 'satellite'>('streets');
+  const [fitBoundsCounter] = useState(0);
+
+  useEffect(() => {
+    const getLocation = async (): Promise<void> => {
+      try {
+        if (Platform.OS === 'web') {
+          if ('geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              async (position) => {
+                const coords = {
+                  latitude: position.coords.latitude,
+                  longitude: position.coords.longitude,
+                };
+                setUserLocation(coords);
+                try {
+                  const response = await fetch(
+                    `https://nominatim.openstreetmap.org/reverse?lat=${coords.latitude}&lon=${coords.longitude}&format=json`
+                  );
+                  const data = await response.json();
+                  if (data.address?.country) {
+                    setUserCountry(data.address.country);
+                    if (data.address?.country_code) {
+                      setUserCountryCode(data.address.country_code.toUpperCase());
+                    }
+                    console.log('User country (web):', data.address.country);
+                  }
+                } catch (e) {
+                  console.log('Reverse geocoding failed (web):', e);
+                }
+                setLocationLoading(false);
+              },
+              (error) => {
+                console.log('Web geolocation error:', error);
+                setLocationError('Could not get location');
+                setLocationLoading(false);
+              }
+            );
+          } else {
+            setLocationError('Geolocation not supported');
+            setLocationLoading(false);
+          }
+          return;
+        }
+
+        const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setLocationError('Location permission denied');
+          setLocationLoading(false);
+          return;
+        }
+
+        const location = await ExpoLocation.getCurrentPositionAsync({
+          accuracy: ExpoLocation.Accuracy.Balanced,
+        });
+        const coords = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        };
+        setUserLocation(coords);
+
+        try {
+          const reverseGeocode = await ExpoLocation.reverseGeocodeAsync(coords);
+          if (reverseGeocode.length > 0 && reverseGeocode[0].country) {
+            setUserCountry(reverseGeocode[0].country);
+            if (reverseGeocode[0].isoCountryCode) {
+              setUserCountryCode(reverseGeocode[0].isoCountryCode);
+            }
+            console.log('User country:', reverseGeocode[0].country, reverseGeocode[0].isoCountryCode);
+          }
+        } catch (e) {
+          console.log('Reverse geocoding failed:', e);
+        }
+        setLocationLoading(false);
+      } catch (error) {
+        console.error('Error getting location:', error);
+        setLocationError('Could not get location');
+        setLocationLoading(false);
+      }
+    };
+
+    void getLocation();
+  }, []);
+
+  const countryCitiesQuery = useInfiniteQuery({
+    queryKey: ['countryCities', userCountryCode],
+    queryFn: async ({ pageParam = 0 }) => {
+      return fetchCitiesByCountry(userCountryCode!, PAGE_SIZE, pageParam as number);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) return undefined;
+      return allPages.length * PAGE_SIZE;
+    },
+    enabled: !!userCountryCode && !!userLocation,
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const countryCities = useMemo(() => {
+    if (!userLocation) return [];
+
+    const apiCities: City[] = countryCitiesQuery.data?.pages.flatMap(p => p.cities) ?? [];
+    const fallbackCities = apiCities.length > 0 ? apiCities : WORLD_CITIES.filter(city => {
+      if (!userCountry) return false;
+      const countryNormalized = userCountry.toLowerCase();
+      const cityCountry = city.country.toLowerCase();
+      return cityCountry === countryNormalized ||
+        cityCountry.includes(countryNormalized) ||
+        countryNormalized.includes(cityCountry);
+    });
+
+    return fallbackCities.map(city => ({
+      id: city.id,
+      name: city.name,
+      latitude: city.latitude,
+      longitude: city.longitude,
+      description: city.country,
+      country: city.country,
+      distance: calculateDistance(userLocation.latitude, userLocation.longitude, city.latitude, city.longitude),
+      isCity: true as const,
+    })).sort((a, b) => a.distance - b.distance);
+  }, [userLocation, userCountry, countryCitiesQuery.data]);
+
+  const countryCitiesTotalCount = useMemo(() => {
+    return countryCitiesQuery.data?.pages[0]?.totalCount ?? 0;
+  }, [countryCitiesQuery.data]);
+
+  const countryLandmarks = useMemo(() => {
+    if (!userCountry || !userLocation) return [];
+    
+    const countryNormalized = userCountry.toLowerCase();
+    return POPULAR_LANDMARKS.filter(loc => {
+      const locCountry = loc.country.toLowerCase();
+      return locCountry === countryNormalized ||
+        locCountry.includes(countryNormalized) ||
+        countryNormalized.includes(locCountry);
+    }).map(loc => ({
+      ...loc,
+      distance: calculateDistance(userLocation.latitude, userLocation.longitude, loc.latitude, loc.longitude),
+      isCity: false as const,
+    })).sort((a, b) => a.distance - b.distance);
+  }, [userLocation, userCountry]);
+
+  const nearbyLocations = useMemo(() => {
+    if (!userLocation) return POPULAR_LANDMARKS.slice(0, 20).map(loc => ({ ...loc, isCity: false as const }));
+    
+    if (userCountry && (countryCities.length > 0 || countryLandmarks.length > 0)) {
+      return { cities: countryCities.slice(0, 15), landmarks: countryLandmarks.slice(0, 20) };
+    }
+    
+    const withDistance = POPULAR_LANDMARKS.map(loc => ({
+      ...loc,
+      distance: calculateDistance(userLocation.latitude, userLocation.longitude, loc.latitude, loc.longitude),
+      isCity: false as const,
+    })).sort((a, b) => (a.distance || 0) - (b.distance || 0)).slice(0, 20);
+    
+    return { cities: [], landmarks: withDistance };
+  }, [userLocation, userCountry, countryCities, countryLandmarks]);
+
+  const handleCitySearchChange = useCallback((text: string) => {
+    setCitySearch(text);
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+    debounceTimer.current = setTimeout(() => {
+      setDebouncedCitySearch(text);
+    }, 400);
+  }, []);
+
+  const citySearchQuery = useInfiniteQuery({
+    queryKey: ['citySearch', debouncedCitySearch],
+    queryFn: async ({ pageParam = 0 }) => {
+      return searchCitiesApi(debouncedCitySearch, PAGE_SIZE, pageParam as number);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) return undefined;
+      return allPages.length * PAGE_SIZE;
+    },
+    enabled: debouncedCitySearch.length >= 2,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const filteredCities = useMemo(() => {
+    return citySearchQuery.data?.pages.flatMap(p => p.cities) ?? [];
+  }, [citySearchQuery.data]);
+
+  const searchTotalCount = useMemo(() => {
+    return citySearchQuery.data?.pages[0]?.totalCount ?? 0;
+  }, [citySearchQuery.data]);
+
+  const topCitiesQuery = useInfiniteQuery({
+    queryKey: ['topCities'],
+    queryFn: async ({ pageParam = 0 }) => {
+      return fetchTopCities(PAGE_SIZE, pageParam as number);
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.hasMore) return undefined;
+      return allPages.length * PAGE_SIZE;
+    },
+    enabled: activeTab === 'cities',
+    staleTime: 1000 * 60 * 30,
+  });
+
+  const topCities = useMemo(() => {
+    return topCitiesQuery.data?.pages.flatMap(p => p.cities) ?? [];
+  }, [topCitiesQuery.data]);
+
+  const topCitiesByContinent = useMemo(() => {
+    const order: Continent[] = ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Oceania'];
+    const grouped: Record<string, City[]> = {};
+    for (const city of topCities) {
+      const key = city.continent ?? 'Other';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(city);
+    }
+    const sections: { continent: string; cities: City[] }[] = [];
+    for (const c of order) {
+      if (grouped[c] && grouped[c].length > 0) {
+        sections.push({ continent: c, cities: grouped[c] });
+      }
+    }
+    if (grouped['Other'] && grouped['Other'].length > 0) {
+      sections.push({ continent: 'Other', cities: grouped['Other'] });
+    }
+    return sections;
+  }, [topCities]);
+
+  const searchCitiesByContinent = useMemo(() => {
+    if (filteredCities.length === 0) return [];
+    const order: Continent[] = ['Africa', 'Asia', 'Europe', 'North America', 'South America', 'Oceania'];
+    const grouped: Record<string, City[]> = {};
+    for (const city of filteredCities) {
+      const key = city.continent ?? 'Other';
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(city);
+    }
+    const sections: { continent: string; cities: City[] }[] = [];
+    for (const c of order) {
+      if (grouped[c] && grouped[c].length > 0) {
+        sections.push({ continent: c, cities: grouped[c] });
+      }
+    }
+    if (grouped['Other'] && grouped['Other'].length > 0) {
+      sections.push({ continent: 'Other', cities: grouped['Other'] });
+    }
+    return sections;
+  }, [filteredCities]);
+
+  const topCitiesTotalCount = useMemo(() => {
+    return topCitiesQuery.data?.pages[0]?.totalCount ?? 0;
+  }, [topCitiesQuery.data]);
+
+  const handlePresetSelect = (location: PopularLocation | Location) => {
+    const loc: Location = {
+      id: location.id,
+      name: location.name,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      description: 'description' in location ? location.description : undefined,
+    };
+    setTarget(loc);
+    router.push('/');
+  };
+
+  const handleCitySelect = (city: City | { id: string; name: string; latitude: number; longitude: number; description: string; country: string }) => {
+    const loc: Location = {
+      id: city.id,
+      name: city.name,
+      latitude: city.latitude,
+      longitude: city.longitude,
+      description: 'country' in city ? city.country : undefined,
+    };
+    setTarget(loc);
+    setCitySearch('');
+    setIsCitySearchFocused(false);
+    router.push('/');
+  };
+
+  const handleCoordinateSubmit = () => {
+    const lat = parseFloat(latitudeInput);
+    const lon = parseFloat(longitudeInput);
+
+    if (isNaN(lat) || isNaN(lon)) {
+      Alert.alert(t('target.invalidCoords'), t('target.invalidCoordsMsg'));
+      return;
+    }
+
+    if (lat < -90 || lat > 90) {
+      Alert.alert(t('target.invalidLat'), t('target.invalidLatMsg'));
+      return;
+    }
+
+    if (lon < -180 || lon > 180) {
+      Alert.alert(t('target.invalidLon'), t('target.invalidLonMsg'));
+      return;
+    }
+
+    const newLocation: Location = {
+      id: `custom-${Date.now()}`,
+      name: nameInput.trim() || t('target.customLocation'),
+      latitude: lat,
+      longitude: lon,
+    };
+
+    setTarget(newLocation);
+    setLatitudeInput('');
+    setLongitudeInput('');
+    setNameInput('');
+    router.push('/');
+  };
+
+  const handleReset = () => {
+    setTarget(KOTEL);
+    router.push('/');
+  };
+
+  const handleMapPress = (event: MapPressEvent) => {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    console.log('Map pressed at:', latitude, longitude);
+    setSelectedMapLocation({ latitude, longitude });
+    setReverseGeoName(null);
+    
+    setMapRegion(prev => ({
+      latitude,
+      longitude,
+      latitudeDelta: prev?.latitudeDelta ?? 9,
+      longitudeDelta: prev?.longitudeDelta ?? 9,
+    }));
+  };
+
+  const handleReverseGeocode = useCallback((name: string, lat: number, lng: number) => {
+    console.log('Reverse geocoded:', name, lat, lng);
+    setReverseGeoName(name);
+  }, []);
+
+  const handleMapSearch = useCallback(async () => {
+    if (mapSearch.trim().length < 2) return;
+    setMapSearching(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(mapSearch.trim())}&format=json&limit=1`
+      );
+      const data = await response.json();
+      if (data.length > 0) {
+        const result = data[0];
+        const coords = { latitude: parseFloat(result.lat), longitude: parseFloat(result.lon) };
+        setMapSearchCoords(coords);
+        setSelectedMapLocation(coords);
+        setReverseGeoName(result.display_name?.split(',').slice(0, 2).join(',').trim() ?? null);
+        setMapRegion(prev => ({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          latitudeDelta: prev?.latitudeDelta ?? 9,
+          longitudeDelta: prev?.longitudeDelta ?? 9,
+        }));
+        console.log('Map search found:', result.display_name);
+      } else {
+        Alert.alert(t('target.mapSearchNoResult'), t('target.mapSearchNoResultMsg'));
+      }
+    } catch (e) {
+      console.log('Map search error:', e);
+      Alert.alert('Error', 'Could not search location');
+    } finally {
+      setMapSearching(false);
+    }
+  }, [mapSearch, t]);
+
+  const handleMapLocationConfirm = () => {
+    if (!selectedMapLocation) return;
+    
+    const newLocation: Location = {
+      id: `map-${Date.now()}`,
+      name: reverseGeoName || t('target.selectedLocation'),
+      latitude: selectedMapLocation.latitude,
+      longitude: selectedMapLocation.longitude,
+      description: `${selectedMapLocation.latitude.toFixed(4)}°, ${selectedMapLocation.longitude.toFixed(4)}°`,
+    };
+    setTarget(newLocation);
+    setSelectedMapLocation(null);
+    setReverseGeoName(null);
+    setMapSearch('');
+    setMapSearchCoords(null);
+    router.push('/');
+  };
+
+  useEffect(() => {
+    if (userLocation && !mapRegion) {
+      setMapRegion({
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+        latitudeDelta: 9,
+        longitudeDelta: 9,
+      });
+    }
+  }, [userLocation, mapRegion]);
+
+  const renderLoadMoreButton = useCallback((
+    hasNextPage: boolean | undefined,
+    isFetchingNextPage: boolean,
+    fetchNextPage: () => void,
+    totalCount: number,
+    loadedCount: number,
+  ) => {
+    if (!hasNextPage) return null;
+    return (
+      <TouchableOpacity
+        style={styles.loadMoreButton}
+        onPress={fetchNextPage}
+        disabled={isFetchingNextPage}
+        testID="load-more-button"
+      >
+        {isFetchingNextPage ? (
+          <ActivityIndicator size="small" color={Colors.compass.gold} />
+        ) : (
+          <>
+            <ChevronDown size={16} color={Colors.compass.gold} />
+            <Text style={styles.loadMoreText}>
+              {t('target.loadMore')} ({loadedCount.toLocaleString()} / {totalCount.toLocaleString()})
+            </Text>
+          </>
+        )}
+      </TouchableOpacity>
+    );
+  }, [t]);
+
+  return (
+    <LinearGradient
+      colors={[Colors.compass.backgroundGradientStart, Colors.compass.backgroundGradientEnd]}
+      style={styles.container}
+    >
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>{t('target.title')}</Text>
+            <View style={styles.currentTarget}>
+              <MapPin size={16} color={Colors.compass.gold} />
+              <Text style={styles.currentTargetText}>
+                {t('target.current')}: {targetLocation.name}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.tabs}>
+            {(['nearby', 'cities', 'map', 'coordinates'] as const).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, activeTab === tab && styles.tabActive]}
+                onPress={() => setActiveTab(tab)}
+              >
+                {tab === 'nearby' && <MapPinned size={14} color={activeTab === tab ? Colors.compass.background : Colors.compass.textSecondary} />}
+                {tab === 'cities' && <Building2 size={14} color={activeTab === tab ? Colors.compass.background : Colors.compass.textSecondary} />}
+                {tab === 'map' && <Map size={14} color={activeTab === tab ? Colors.compass.background : Colors.compass.textSecondary} />}
+                {tab === 'coordinates' && <Navigation size={14} color={activeTab === tab ? Colors.compass.background : Colors.compass.textSecondary} />}
+                <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+                  {t(`target.${tab}`)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {activeTab === 'nearby' && (
+            <View style={styles.section}>
+              {locationLoading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color={Colors.compass.gold} />
+                  <Text style={styles.loadingText}>{t('target.gettingLocation')}</Text>
+                </View>
+              ) : locationError ? (
+                <Text style={styles.errorText}>{t('target.locationError')} - {t('target.showingLandmarks')}</Text>
+              ) : null}
+              
+              {'cities' in nearbyLocations && nearbyLocations.cities.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>
+                    {userCountry ? `${t('target.majorCities')} ${userCountry}` : t('target.majorCitiesGeneric')}
+                  </Text>
+                  {countryCitiesTotalCount > 0 && (
+                    <Text style={styles.totalCountBadge}>
+                      {countryCitiesTotalCount.toLocaleString()} {t('target.citiesAvailable')}
+                    </Text>
+                  )}
+                  {nearbyLocations.cities.map((city) => (
+                    <TouchableOpacity
+                      key={city.id}
+                      style={[
+                        styles.presetItem,
+                        targetLocation.id === city.id && styles.presetItemActive,
+                      ]}
+                      onPress={() => handleCitySelect(city)}
+                    >
+                      <View style={styles.presetInfo}>
+                        <View style={styles.presetHeader}>
+                          <Building2 size={14} color={Colors.compass.gold} />
+                          <Text style={styles.presetName}>{city.name}</Text>
+                        </View>
+                        <Text style={styles.presetDescription}>{city.description}</Text>
+                        {city.distance !== undefined && (
+                          <Text style={styles.distanceText}>{formatDistance(city.distance, distanceUnit)} {t('target.away')}</Text>
+                        )}
+                      </View>
+                      {targetLocation.id === city.id && (
+                        <Check size={24} color={Colors.compass.gold} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                  {renderLoadMoreButton(
+                    countryCitiesQuery.hasNextPage,
+                    countryCitiesQuery.isFetchingNextPage,
+                    () => countryCitiesQuery.fetchNextPage(),
+                    countryCitiesTotalCount,
+                    countryCities.length,
+                  )}
+                </>
+              )}
+              
+              {'landmarks' in nearbyLocations && nearbyLocations.landmarks.length > 0 && (
+                <>
+                  <Text style={[styles.sectionTitle, nearbyLocations.cities.length > 0 && styles.sectionTitleSpaced]}>
+                    {userCountry ? `${t('target.popularPlaces')} ${userCountry}` : t('target.popularPlacesNearby')}
+                  </Text>
+                  {nearbyLocations.landmarks.map((location) => (
+                    <TouchableOpacity
+                      key={location.id}
+                      style={[
+                        styles.presetItem,
+                        targetLocation.id === location.id && styles.presetItemActive,
+                      ]}
+                      onPress={() => handlePresetSelect(location)}
+                    >
+                      <View style={styles.presetInfo}>
+                        <View style={styles.presetHeader}>
+                          <MapPin size={14} color={Colors.compass.gold} />
+                          <Text style={styles.presetName}>{location.name}</Text>
+                        </View>
+                        <Text style={styles.presetDescription}>{location.description}</Text>
+                        {location.distance !== undefined && (
+                          <Text style={styles.distanceText}>{formatDistance(location.distance, distanceUnit)} {t('target.away')}</Text>
+                        )}
+                      </View>
+                      {targetLocation.id === location.id && (
+                        <Check size={24} color={Colors.compass.gold} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+              
+              {!('cities' in nearbyLocations) && Array.isArray(nearbyLocations) && nearbyLocations.map((location) => (
+                <TouchableOpacity
+                  key={location.id}
+                  style={[
+                    styles.presetItem,
+                    targetLocation.id === location.id && styles.presetItemActive,
+                  ]}
+                  onPress={() => handlePresetSelect(location)}
+                >
+                  <View style={styles.presetInfo}>
+                    <Text style={styles.presetName}>{location.name}</Text>
+                    <Text style={styles.presetDescription}>{location.description}</Text>
+                  </View>
+                  {targetLocation.id === location.id && (
+                    <Check size={24} color={Colors.compass.gold} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {activeTab === 'cities' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('target.searchCities')}</Text>
+              <Text style={styles.sectionSubtitle}>{t('target.searchSubtitle')}</Text>
+              
+              <View style={styles.searchContainer}>
+                <Search size={18} color={Colors.compass.textSecondary} />
+                <TextInput
+                  style={styles.searchInput}
+                  value={citySearch}
+                  onChangeText={handleCitySearchChange}
+                  placeholder={t('target.searchPlaceholder')}
+                  placeholderTextColor={Colors.compass.textSecondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onFocus={() => setIsCitySearchFocused(true)}
+                />
+              </View>
+
+              {citySearch.length > 0 && citySearch.length < 2 && (
+                <Text style={styles.hintText}>{t('target.enterMore').replace('{count}', String(2 - citySearch.length)).replace('{plural}', 2 - citySearch.length > 1 ? 's' : '')}</Text>
+              )}
+
+              {citySearchQuery.isLoading && debouncedCitySearch.length >= 2 && (
+                <View style={styles.searchLoadingContainer}>
+                  <ActivityIndicator size="small" color={Colors.compass.gold} />
+                  <Text style={styles.searchLoadingText}>{t('target.searchingCities')}</Text>
+                </View>
+              )}
+
+              {searchCitiesByContinent.length > 0 && (
+                <>
+                  {searchTotalCount > 0 && (
+                    <Text style={styles.resultCountText}>
+                      {searchTotalCount.toLocaleString()} {t('target.resultsFound')}
+                    </Text>
+                  )}
+                  <View style={styles.citiesList}>
+                    {searchCitiesByContinent.map((section) => (
+                      <View key={section.continent}>
+                        <View style={styles.continentHeader}>
+                          <Globe size={14} color={Colors.compass.gold} />
+                          <Text style={styles.continentTitle}>{t(`continent.${section.continent}`)}</Text>
+                          <Text style={styles.continentCount}>({section.cities.length})</Text>
+                        </View>
+                        {section.cities.map((city) => (
+                          <TouchableOpacity
+                            key={city.id}
+                            style={[
+                              styles.cityItem,
+                              targetLocation.id === city.id && styles.cityItemActive,
+                            ]}
+                            onPress={() => handleCitySelect(city)}
+                          >
+                            <View style={styles.cityInfo}>
+                              <Text style={styles.cityName}>{city.name}</Text>
+                              <Text style={styles.cityCountry}>{city.country}</Text>
+                            </View>
+                            {targetLocation.id === city.id && (
+                              <Check size={20} color={Colors.compass.gold} />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    ))}
+                  </View>
+                  {renderLoadMoreButton(
+                    citySearchQuery.hasNextPage,
+                    citySearchQuery.isFetchingNextPage,
+                    () => citySearchQuery.fetchNextPage(),
+                    searchTotalCount,
+                    filteredCities.length,
+                  )}
+                </>
+              )}
+
+              {debouncedCitySearch.length >= 2 && !citySearchQuery.isLoading && filteredCities.length === 0 && (
+                <Text style={styles.noResultsText}>{t('target.noResults')} &quot;{debouncedCitySearch}&quot;</Text>
+              )}
+
+              {citySearch.length === 0 && (
+                <>
+                  <View style={styles.browseHeader}>
+                    <Globe size={16} color={Colors.compass.gold} />
+                    <Text style={styles.browseTitleText}>{t('target.browseTopCities')}</Text>
+                    {topCitiesTotalCount > 0 && (
+                      <Text style={styles.browseCountText}>
+                        ({topCitiesTotalCount.toLocaleString()})
+                      </Text>
+                    )}
+                  </View>
+
+                  {topCitiesQuery.isLoading && (
+                    <View style={styles.searchLoadingContainer}>
+                      <ActivityIndicator size="small" color={Colors.compass.gold} />
+                      <Text style={styles.searchLoadingText}>{t('target.loadingCities')}</Text>
+                    </View>
+                  )}
+
+                  {topCitiesByContinent.length > 0 && (
+                    <View style={styles.citiesList}>
+                      {topCitiesByContinent.map((section) => (
+                        <View key={section.continent}>
+                          <View style={styles.continentHeader}>
+                            <Globe size={14} color={Colors.compass.gold} />
+                            <Text style={styles.continentTitle}>{t(`continent.${section.continent}`)}</Text>
+                            <Text style={styles.continentCount}>({section.cities.length})</Text>
+                          </View>
+                          {section.cities.map((city) => (
+                            <TouchableOpacity
+                              key={city.id}
+                              style={[
+                                styles.cityItem,
+                                targetLocation.id === city.id && styles.cityItemActive,
+                              ]}
+                              onPress={() => handleCitySelect(city)}
+                            >
+                              <View style={styles.cityInfo}>
+                                <Text style={styles.cityName}>{city.name}</Text>
+                                <Text style={styles.cityCountry}>{city.country}</Text>
+                              </View>
+                              {targetLocation.id === city.id && (
+                                <Check size={20} color={Colors.compass.gold} />
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ))}
+                      {renderLoadMoreButton(
+                        topCitiesQuery.hasNextPage,
+                        topCitiesQuery.isFetchingNextPage,
+                        () => topCitiesQuery.fetchNextPage(),
+                        topCitiesTotalCount,
+                        topCities.length,
+                      )}
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+          )}
+
+          {activeTab === 'map' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('target.selectOnMap')}</Text>
+              <Text style={styles.sectionSubtitle}>{t('target.mapSubtitle')}</Text>
+
+              <View style={styles.mapSearchRow}>
+                <View style={styles.mapSearchContainer}>
+                  <Search size={16} color={Colors.compass.textSecondary} />
+                  <TextInput
+                    style={styles.mapSearchInput}
+                    value={mapSearch}
+                    onChangeText={setMapSearch}
+                    placeholder={t('target.mapSearchPlaceholder')}
+                    placeholderTextColor={Colors.compass.textSecondary}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                    onSubmitEditing={handleMapSearch}
+                  />
+                </View>
+                <TouchableOpacity
+                  style={[styles.mapSearchBtn, mapSearch.trim().length < 2 && styles.mapSearchBtnDisabled]}
+                  onPress={handleMapSearch}
+                  disabled={mapSearch.trim().length < 2 || mapSearching}
+                  testID="map-search-button"
+                >
+                  {mapSearching ? (
+                    <ActivityIndicator size="small" color={Colors.compass.background} />
+                  ) : (
+                    <Search size={16} color={Colors.compass.background} />
+                  )}
+                </TouchableOpacity>
+              </View>
+              
+              <View style={styles.mapContainer}>
+                {locationLoading ? (
+                  <View style={styles.mapLoadingContainer}>
+                    <ActivityIndicator size="large" color={Colors.compass.gold} />
+                    <Text style={styles.mapLoadingText}>{t('target.gettingLocation')}</Text>
+                  </View>
+                ) : (
+                  <NativeMapView
+                    userLocation={userLocation}
+                    mapRegion={mapRegion}
+                    targetLocation={targetLocation}
+                    selectedMapLocation={selectedMapLocation}
+                    onMapPress={handleMapPress}
+                    onReverseGeocode={handleReverseGeocode}
+                    showDistanceLine={true}
+                    mapStyle={mapStyle}
+                    fitBoundsRequest={fitBoundsCounter}
+                    searchCoords={mapSearchCoords}
+                  />
+                )}
+              </View>
+              
+              {selectedMapLocation && (
+                <View style={styles.selectedLocationInfo}>
+                  {reverseGeoName && (
+                    <View style={styles.reverseGeoRow}>
+                      <MapPin size={14} color={Colors.compass.gold} />
+                      <Text style={styles.reverseGeoName} numberOfLines={2}>{reverseGeoName}</Text>
+                    </View>
+                  )}
+                  <View style={styles.selectedCoords}>
+                    <Text style={styles.selectedCoordsLabel}>{t('target.selected')}</Text>
+                    <Text style={styles.selectedCoordsValue}>
+                      {selectedMapLocation.latitude.toFixed(4)}°, {selectedMapLocation.longitude.toFixed(4)}°
+                    </Text>
+                  </View>
+                  {userLocation && (
+                    <Text style={styles.selectedDistanceText}>
+                      {formatDistance(calculateDistance(userLocation.latitude, userLocation.longitude, selectedMapLocation.latitude, selectedMapLocation.longitude), distanceUnit)} {t('target.away')}
+                    </Text>
+                  )}
+                  <TouchableOpacity style={styles.confirmMapButton} onPress={handleMapLocationConfirm}>
+                    <Check size={20} color={Colors.compass.background} />
+                    <Text style={styles.confirmMapButtonText}>{t('target.setAsTarget')}</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              
+              <View style={styles.mapHint}>
+                <Text style={styles.mapHintText}>• {t('target.mapHintTap')}</Text>
+                <Text style={styles.mapHintText}>• {t('target.mapHintSearch')}</Text>
+                <Text style={styles.mapHintText}>• {t('target.mapHintSat')}</Text>
+                <Text style={styles.mapHintText}>• {t('target.mapHintMyLoc')}</Text>
+                <Text style={styles.mapHintText}>• {t('target.mapHintFit')}</Text>
+              </View>
+            </View>
+          )}
+
+          {activeTab === 'coordinates' && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>{t('target.enterCoordinates')}</Text>
+              
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>{t('target.locationName')}</Text>
+                <TextInput
+                  style={styles.input}
+                  value={nameInput}
+                  onChangeText={setNameInput}
+                  placeholder={t('target.locationNamePlaceholder')}
+                  placeholderTextColor={Colors.compass.textSecondary}
+                />
+              </View>
+
+              <View style={styles.inputRow}>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{t('target.latitude')}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={latitudeInput}
+                    onChangeText={setLatitudeInput}
+                    placeholder="e.g., 31.7781"
+                    placeholderTextColor={Colors.compass.textSecondary}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                  <Text style={styles.inputHint}>{t('target.latRange')}</Text>
+                </View>
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.inputLabel}>{t('target.longitude')}</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={longitudeInput}
+                    onChangeText={setLongitudeInput}
+                    placeholder="e.g., 35.2354"
+                    placeholderTextColor={Colors.compass.textSecondary}
+                    keyboardType="numbers-and-punctuation"
+                  />
+                  <Text style={styles.inputHint}>{t('target.lonRange')}</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.submitButton} onPress={handleCoordinateSubmit}>
+                <Navigation size={20} color={Colors.compass.background} />
+                <Text style={styles.submitButtonText}>{t('target.setAsTarget')}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.resetButton} onPress={handleReset}>
+            <RotateCcw size={18} color={Colors.compass.textSecondary} />
+            <Text style={styles.resetButtonText}>{t('target.resetToKotel')}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </LinearGradient>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+  },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.compass.text,
+    marginBottom: 8,
+  },
+  currentTarget: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  currentTargetText: {
+    fontSize: 14,
+    color: Colors.compass.textSecondary,
+  },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 24,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    gap: 4,
+  },
+  tabActive: {
+    backgroundColor: Colors.compass.gold,
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.compass.textSecondary,
+  },
+  tabTextActive: {
+    color: Colors.compass.background,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.compass.text,
+    marginBottom: 8,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: Colors.compass.textSecondary,
+    marginBottom: 16,
+  },
+  sectionTitleSpaced: {
+    marginTop: 20,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 8,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: Colors.compass.textSecondary,
+  },
+  errorText: {
+    fontSize: 13,
+    color: Colors.compass.textSecondary,
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  totalCountBadge: {
+    fontSize: 12,
+    color: Colors.compass.gold,
+    marginBottom: 12,
+    fontWeight: '500',
+    opacity: 0.8,
+  },
+  presetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.compass.border,
+    marginBottom: 12,
+  },
+  presetItemActive: {
+    borderColor: Colors.compass.gold,
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+  },
+  presetInfo: {
+    flex: 1,
+  },
+  presetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  presetName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.compass.text,
+  },
+  presetDescription: {
+    fontSize: 13,
+    color: Colors.compass.textSecondary,
+    marginTop: 2,
+  },
+  distanceText: {
+    fontSize: 12,
+    color: Colors.compass.gold,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.compass.border,
+    paddingHorizontal: 14,
+    gap: 10,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: Colors.compass.text,
+  },
+  hintText: {
+    fontSize: 12,
+    color: Colors.compass.gold,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  resultCountText: {
+    fontSize: 12,
+    color: Colors.compass.gold,
+    marginTop: 12,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  citiesList: {
+    marginTop: 12,
+  },
+  cityItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.compass.border,
+    marginBottom: 8,
+  },
+  cityItemActive: {
+    borderColor: Colors.compass.gold,
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+  },
+  cityInfo: {
+    flex: 1,
+  },
+  cityName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.compass.text,
+  },
+  cityCountry: {
+    fontSize: 12,
+    color: Colors.compass.textSecondary,
+    marginTop: 2,
+  },
+  noResultsText: {
+    fontSize: 13,
+    color: Colors.compass.textSecondary,
+    textAlign: 'center',
+    marginTop: 20,
+    fontStyle: 'italic',
+  },
+  loadMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    marginTop: 4,
+    marginBottom: 8,
+    backgroundColor: 'rgba(212, 175, 55, 0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.25)',
+  },
+  loadMoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.compass.gold,
+  },
+  browseHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 24,
+    marginBottom: 4,
+  },
+  browseTitleText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.compass.text,
+  },
+  browseCountText: {
+    fontSize: 12,
+    color: Colors.compass.textSecondary,
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 13,
+    color: Colors.compass.textSecondary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  input: {
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.compass.border,
+    padding: 16,
+    fontSize: 16,
+    color: Colors.compass.text,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  inputHint: {
+    fontSize: 11,
+    color: Colors.compass.textSecondary,
+    marginTop: 6,
+    opacity: 0.8,
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: Colors.compass.gold,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 8,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.compass.background,
+  },
+  resetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: Colors.compass.border,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  resetButtonText: {
+    fontSize: 14,
+    color: Colors.compass.textSecondary,
+  },
+  mapContainer: {
+    height: 350,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.compass.border,
+  },
+  map: {
+    flex: 1,
+  },
+  mapLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.compass.cardBackground,
+  },
+  mapLoadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: Colors.compass.textSecondary,
+  },
+  selectedLocationInfo: {
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.compass.gold,
+  },
+  selectedCoords: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  selectedCoordsLabel: {
+    fontSize: 14,
+    color: Colors.compass.textSecondary,
+  },
+  selectedCoordsValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.compass.gold,
+  },
+  confirmMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: Colors.compass.gold,
+    borderRadius: 10,
+    paddingVertical: 12,
+  },
+  confirmMapButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.compass.background,
+  },
+  mapHint: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 10,
+    padding: 12,
+  },
+  mapHintText: {
+    fontSize: 12,
+    color: Colors.compass.textSecondary,
+    marginBottom: 4,
+  },
+  webMapFallback: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Colors.compass.cardBackground,
+    padding: 24,
+  },
+  webMapTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.compass.text,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  webMapText: {
+    fontSize: 14,
+    color: Colors.compass.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  webMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.compass.gold,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  webMapButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.compass.background,
+  },
+  searchLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+    padding: 12,
+  },
+  searchLoadingText: {
+    fontSize: 13,
+    color: Colors.compass.textSecondary,
+  },
+  continentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  continentTitle: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.compass.gold,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  continentCount: {
+    fontSize: 11,
+    color: Colors.compass.textSecondary,
+  },
+  mapSearchRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  mapSearchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.compass.cardBackground,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.compass.border,
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  mapSearchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: Colors.compass.text,
+  },
+  mapSearchBtn: {
+    width: 44,
+    height: 44,
+    backgroundColor: Colors.compass.gold,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapSearchBtnDisabled: {
+    opacity: 0.4,
+  },
+  reverseGeoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  reverseGeoName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: Colors.compass.text,
+  },
+  selectedDistanceText: {
+    fontSize: 13,
+    color: Colors.compass.gold,
+    marginBottom: 12,
+    fontWeight: '500' as const,
+  },
+});

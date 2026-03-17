@@ -1,0 +1,109 @@
+import { City } from '@/constants/cities';
+
+const BASE_URL = 'https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/geonames-all-cities-with-a-population-1000/records';
+
+interface GeoNamesRecord {
+  name: string;
+  country_code: string;
+  cou_name_en: string;
+  population: number;
+  coordinates: {
+    lat: number;
+    lon: number;
+  };
+  geoname_id: string;
+}
+
+interface ApiResponse {
+  total_count: number;
+  results: GeoNamesRecord[];
+}
+
+function recordToCity(record: GeoNamesRecord): City {
+  return {
+    id: `geo-${record.geoname_id}`,
+    name: record.name,
+    country: record.cou_name_en || record.country_code,
+    latitude: record.coordinates?.lat ?? 0,
+    longitude: record.coordinates?.lon ?? 0,
+  };
+}
+
+export async function searchCitiesApi(query: string, limit: number = 20): Promise<City[]> {
+  if (query.length < 2) return [];
+
+  try {
+    const encodedQuery = encodeURIComponent(query);
+    const url = `${BASE_URL}?where=search(name,"${encodedQuery}")&order_by=population DESC&limit=${limit}`;
+    console.log('Fetching cities:', url);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error('Cities API error:', response.status);
+      return [];
+    }
+
+    const data: ApiResponse = await response.json();
+    console.log(`Found ${data.total_count} cities for "${query}", returning ${data.results.length}`);
+
+    return data.results
+      .filter((r) => r.coordinates)
+      .map(recordToCity);
+  } catch (error) {
+    console.error('Error fetching cities:', error);
+    return [];
+  }
+}
+
+export async function fetchCitiesByCountry(
+  countryCode: string,
+  limit: number = 30
+): Promise<City[]> {
+  try {
+    const url = `${BASE_URL}?where=country_code="${encodeURIComponent(countryCode)}"&order_by=population DESC&limit=${limit}`;
+    console.log('Fetching cities by country:', url);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error('Cities by country API error:', response.status);
+      return [];
+    }
+
+    const data: ApiResponse = await response.json();
+    console.log(`Found ${data.results.length} cities in ${countryCode}`);
+
+    return data.results
+      .filter((r) => r.coordinates)
+      .map(recordToCity);
+  } catch (error) {
+    console.error('Error fetching cities by country:', error);
+    return [];
+  }
+}
+
+export async function fetchNearbyCities(
+  lat: number,
+  lon: number,
+  limit: number = 20
+): Promise<City[]> {
+  try {
+    const url = `${BASE_URL}?where=within_distance(coordinates, geom'POINT(${lon} ${lat})', 500km)&order_by=population DESC&limit=${limit}`;
+    console.log('Fetching nearby cities:', url);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error('Nearby cities API error:', response.status);
+      return [];
+    }
+
+    const data: ApiResponse = await response.json();
+    console.log(`Found ${data.results.length} nearby cities`);
+
+    return data.results
+      .filter((r) => r.coordinates)
+      .map(recordToCity);
+  } catch (error) {
+    console.error('Error fetching nearby cities:', error);
+    return [];
+  }
+}
