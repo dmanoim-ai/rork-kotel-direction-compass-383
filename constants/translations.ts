@@ -32,6 +32,9 @@ const translations: Record<Language, Record<string, string>> = {
     'compass.directionTo': 'to',
     'compass.holdFlat': 'Hold Flat',
     'compass.rotateHint': 'Rotate your device so that arrow points to the red line',
+    'compass.noGps': 'No GPS Signal',
+    'compass.noGpsMsg': 'Unable to determine your location. Please go outdoors or check your location settings.',
+    'compass.retry': 'Retry',
 
     // Cardinal directions
     'cardinal.N': 'N',
@@ -169,6 +172,9 @@ const translations: Record<Language, Record<string, string>> = {
     'compass.directionTo': 'vers',
     'compass.holdFlat': 'Tenir à plat',
     'compass.rotateHint': 'Tournez votre appareil pour que la flèche pointe vers la ligne rouge',
+    'compass.noGps': 'Pas de signal GPS',
+    'compass.noGpsMsg': 'Impossible de déterminer votre position. Veuillez sortir ou vérifier vos paramètres de localisation.',
+    'compass.retry': 'Réessayer',
 
     'cardinal.N': 'N',
     'cardinal.NE': 'NE',
@@ -299,6 +305,9 @@ const translations: Record<Language, Record<string, string>> = {
     'compass.directionTo': 'hacia',
     'compass.holdFlat': 'Mantener plano',
     'compass.rotateHint': 'Gira tu dispositivo para que la flecha apunte a la línea roja',
+    'compass.noGps': 'Sin señal GPS',
+    'compass.noGpsMsg': 'No se puede determinar tu ubicación. Sal al exterior o verifica tu configuración de ubicación.',
+    'compass.retry': 'Reintentar',
 
     'cardinal.N': 'N',
     'cardinal.NE': 'NE',
@@ -429,6 +438,9 @@ const translations: Record<Language, Record<string, string>> = {
     'compass.directionTo': 'nach',
     'compass.holdFlat': 'Flach halten',
     'compass.rotateHint': 'Drehen Sie Ihr Gerät, damit der Pfeil auf die rote Linie zeigt',
+    'compass.noGps': 'Kein GPS-Signal',
+    'compass.noGpsMsg': 'Standort kann nicht ermittelt werden. Bitte gehen Sie nach draußen oder überprüfen Sie Ihre Standorteinstellungen.',
+    'compass.retry': 'Erneut versuchen',
 
     'cardinal.N': 'N',
     'cardinal.NE': 'NO',
@@ -559,6 +571,9 @@ const translations: Record<Language, Record<string, string>> = {
     'compass.directionTo': 'до',
     'compass.holdFlat': 'Держать ровно',
     'compass.rotateHint': 'Поверните устройство так, чтобы стрелка указывала на красную линию',
+    'compass.noGps': 'Нет сигнала GPS',
+    'compass.noGpsMsg': 'Не удается определить ваше местоположение. Выйдите на улицу или проверьте настройки геолокации.',
+    'compass.retry': 'Повторить',
 
     'cardinal.N': 'С',
     'cardinal.NE': 'СВ',
@@ -689,6 +704,9 @@ const translations: Record<Language, Record<string, string>> = {
     'compass.directionTo': 'אל',
     'compass.holdFlat': 'החזק שטוח',
     'compass.rotateHint': 'סובב את המכשיר כך שהחץ יצביע לקו האדום',
+    'compass.noGps': 'אין אות GPS',
+    'compass.noGpsMsg': 'לא ניתן לקבוע את מיקומך. צא החוצה או בדוק את הגדרות המיקום.',
+    'compass.retry': 'נסה שוב',
 
     'cardinal.N': 'צ',
     'cardinal.NE': 'צמ',
