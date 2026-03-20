@@ -92,7 +92,7 @@ export function useCompass(target: TargetLocation): CompassData {
   const SMOOTHING_FACTOR = 0.15;
   const hasMagData = useRef(false);
   const hasAccelData = useRef(false);
-  const [orientationOffset, setOrientationOffset] = useState(0);
+  const [_orientationOffset, setOrientationOffset] = useState(0);
 
   const computeTiltCompensatedHeading = useCallback(() => {
     const ax = accelRef.current.x;
@@ -350,9 +350,7 @@ export function useCompass(target: TargetLocation): CompassData {
     };
   }, [computeTiltCompensatedHeading]);
 
-  const adjustedHeading = IS_IPAD
-    ? (heading + orientationOffset + 360) % 360
-    : heading;
+  const adjustedHeading = heading;
 
   const bearing = userLocation
     ? calculateBearing(
