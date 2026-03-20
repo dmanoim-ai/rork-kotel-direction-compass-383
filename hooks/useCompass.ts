@@ -5,20 +5,6 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { Magnetometer, Accelerometer } from 'expo-sensors';
 import { Location as TargetLocation } from '@/constants/locations';
 
-function getOrientationOffset(orientation: ScreenOrientation.Orientation): number {
-  switch (orientation) {
-    case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
-      return 90;
-    case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
-      return -90;
-    case ScreenOrientation.Orientation.PORTRAIT_DOWN:
-      return 180;
-    case ScreenOrientation.Orientation.PORTRAIT_UP:
-    default:
-      return 0;
-  }
-}
-
 interface CompassData {
   heading: number;
   bearing: number;
@@ -84,7 +70,7 @@ export function useCompass(target: TargetLocation): CompassData {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [orientationOffset, setOrientationOffset] = useState(0);
+
 
   const magRef = useRef({ x: 0, y: 0, z: 0 });
   const accelRef = useRef({ x: 0, y: 0, z: 0 });
@@ -92,14 +78,32 @@ export function useCompass(target: TargetLocation): CompassData {
   const SMOOTHING_FACTOR = 0.15;
   const hasMagData = useRef(false);
   const hasAccelData = useRef(false);
+  const orientationRef = useRef<ScreenOrientation.Orientation>(ScreenOrientation.Orientation.PORTRAIT_UP);
+
+  const transformSensorData = useCallback((raw: { x: number; y: number; z: number }): { x: number; y: number; z: number } => {
+    const ori = orientationRef.current;
+    switch (ori) {
+      case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
+        return { x: raw.y, y: -raw.x, z: raw.z };
+      case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
+        return { x: -raw.y, y: raw.x, z: raw.z };
+      case ScreenOrientation.Orientation.PORTRAIT_DOWN:
+        return { x: -raw.x, y: -raw.y, z: raw.z };
+      case ScreenOrientation.Orientation.PORTRAIT_UP:
+      default:
+        return { x: raw.x, y: raw.y, z: raw.z };
+    }
+  }, []);
 
   const computeTiltCompensatedHeading = useCallback(() => {
-    const ax = accelRef.current.x;
-    const ay = accelRef.current.y;
-    const az = accelRef.current.z;
-    const mx = magRef.current.x;
-    const my = magRef.current.y;
-    const mz = magRef.current.z;
+    const accelTransformed = transformSensorData(accelRef.current);
+    const magTransformed = transformSensorData(magRef.current);
+    const ax = accelTransformed.x;
+    const ay = accelTransformed.y;
+    const az = accelTransformed.z;
+    const mx = magTransformed.x;
+    const my = magTransformed.y;
+    const mz = magTransformed.z;
 
     const gravMag = Math.sqrt(ax * ax + ay * ay + az * az);
     if (gravMag < 0.1) return;
@@ -134,7 +138,7 @@ export function useCompass(target: TargetLocation): CompassData {
     smoothedHeadingRef.current = smoothed;
 
     setHeading(smoothed);
-  }, []);
+  }, [transformSensorData]);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
@@ -293,8 +297,24 @@ export function useCompass(target: TargetLocation): CompassData {
       try {
         console.log('Setting up heading subscription fallback');
         const headingSub = await Location.watchHeadingAsync((headingData) => {
-          const newHeading = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
-          if (newHeading >= 0) {
+          const rawHeading = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
+          if (rawHeading >= 0) {
+            const ori = orientationRef.current;
+            let orientationOffset = 0;
+            switch (ori) {
+              case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
+                orientationOffset = 90;
+                break;
+              case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
+                orientationOffset = -90;
+                break;
+              case ScreenOrientation.Orientation.PORTRAIT_DOWN:
+                orientationOffset = 180;
+                break;
+              default:
+                orientationOffset = 0;
+            }
+            const newHeading = (rawHeading + orientationOffset + 360) % 360;
             const prev = smoothedHeadingRef.current;
             let delta = newHeading - prev;
             if (delta > 180) delta -= 360;
@@ -331,14 +351,12 @@ export function useCompass(target: TargetLocation): CompassData {
     const setup = async () => {
       try {
         const current = await ScreenOrientation.getOrientationAsync();
-        const offset = getOrientationOffset(current);
-        setOrientationOffset(offset);
-        console.log('Initial screen orientation:', current, 'offset:', offset);
+        orientationRef.current = current;
+        console.log('Initial screen orientation:', current);
 
         subscription = ScreenOrientation.addOrientationChangeListener((event) => {
-          const newOffset = getOrientationOffset(event.orientationInfo.orientation);
-          setOrientationOffset(newOffset);
-          console.log('Screen orientation changed:', event.orientationInfo.orientation, 'offset:', newOffset);
+          orientationRef.current = event.orientationInfo.orientation;
+          console.log('Screen orientation changed:', event.orientationInfo.orientation);
         });
       } catch (err) {
         console.log('Screen orientation detection not available:', err);
@@ -363,9 +381,7 @@ export function useCompass(target: TargetLocation): CompassData {
       )
     : 0;
 
-  const correctedHeading = (heading + orientationOffset + 360) % 360;
-
-  const direction = (bearing - correctedHeading + 360) % 360;
+  const direction = (bearing - heading + 360) % 360;
 
   const distance = userLocation
     ? calculateDistance(
@@ -377,7 +393,7 @@ export function useCompass(target: TargetLocation): CompassData {
     : 0;
 
   return {
-    heading: correctedHeading,
+    heading,
     bearing,
     direction,
     distance,
