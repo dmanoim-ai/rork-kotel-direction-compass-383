@@ -350,7 +350,7 @@ export function useCompass(target: TargetLocation): CompassData {
     };
   }, [computeTiltCompensatedHeading]);
 
-  const adjustedHeading = heading;
+  const adjustedHeading = IS_IPAD ? (heading + 180) % 360 : heading;
 
   const bearing = userLocation
     ? calculateBearing(
