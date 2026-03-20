@@ -14,6 +14,7 @@ interface CompassData {
   accuracy: number | null;
   isCalibrated: boolean;
   error: string | null;
+  isGpsWeak: boolean;
 }
 
 function calculateBearing(
@@ -70,6 +71,8 @@ export function useCompass(target: TargetLocation): CompassData {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isGpsWeak, setIsGpsWeak] = useState(false);
+  const locationReceivedRef = useRef(false);
 
   const smoothedHeadingRef = useRef(0);
   const SMOOTHING_FACTOR = 0.15;
@@ -272,14 +275,23 @@ export function useCompass(target: TargetLocation): CompassData {
         }
 
         if (location) {
+          const acc = location.coords.accuracy ?? null;
           setUserLocation({
             latitude: location.coords.latitude,
             longitude: location.coords.longitude,
           });
-          setAccuracy(location.coords.accuracy ?? null);
-          console.log('Got initial location:', location.coords.latitude, location.coords.longitude);
+          setAccuracy(acc);
+          locationReceivedRef.current = true;
+          if (acc !== null && acc > 150) {
+            setIsGpsWeak(true);
+            console.log('Initial location has weak accuracy:', acc, 'm');
+          } else {
+            setIsGpsWeak(false);
+          }
+          console.log('Got initial location:', location.coords.latitude, location.coords.longitude, 'accuracy:', acc);
         } else {
           console.error('Could not get initial location at any accuracy level');
+          setError('No GPS signal');
         }
 
         try {
@@ -290,11 +302,19 @@ export function useCompass(target: TargetLocation): CompassData {
               distanceInterval: 3,
             },
             (loc) => {
+              const acc = loc.coords.accuracy ?? null;
               setUserLocation({
                 latitude: loc.coords.latitude,
                 longitude: loc.coords.longitude,
               });
-              setAccuracy(loc.coords.accuracy ?? null);
+              setAccuracy(acc);
+              locationReceivedRef.current = true;
+              if (acc !== null && acc > 150) {
+                setIsGpsWeak(true);
+              } else {
+                setIsGpsWeak(false);
+                setError(null);
+              }
             }
           );
         } catch (watchErr) {
@@ -307,11 +327,19 @@ export function useCompass(target: TargetLocation): CompassData {
                 distanceInterval: 10,
               },
               (loc) => {
+                const acc = loc.coords.accuracy ?? null;
                 setUserLocation({
                   latitude: loc.coords.latitude,
                   longitude: loc.coords.longitude,
                 });
-                setAccuracy(loc.coords.accuracy ?? null);
+                setAccuracy(acc);
+                locationReceivedRef.current = true;
+                if (acc !== null && acc > 150) {
+                  setIsGpsWeak(true);
+                } else {
+                  setIsGpsWeak(false);
+                  setError(null);
+                }
               }
             );
           } catch (watchErr2) {
@@ -404,5 +432,6 @@ export function useCompass(target: TargetLocation): CompassData {
     accuracy,
     isCalibrated,
     error,
+    isGpsWeak,
   };
 }

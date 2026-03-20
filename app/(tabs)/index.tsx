@@ -131,7 +131,10 @@ export default function CompassScreen() {
   }, []);
 
   const isIPad = Platform.OS === 'ios' && (Platform as PlatformIOSStatic).isPad === true;
-  const showNoGps = isIPad && (gpsTimedOut || !!compass.error);
+  const showNoGps = isIPad && (
+    (gpsTimedOut || !!compass.error) ||
+    compass.isGpsWeak
+  );
 
   if (isLoadingTarget) {
     return (
