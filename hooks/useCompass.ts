@@ -1,8 +1,23 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Magnetometer, Accelerometer } from 'expo-sensors';
 import { Location as TargetLocation } from '@/constants/locations';
+
+function getOrientationOffset(orientation: ScreenOrientation.Orientation): number {
+  switch (orientation) {
+    case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
+      return 90;
+    case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
+      return -90;
+    case ScreenOrientation.Orientation.PORTRAIT_DOWN:
+      return 180;
+    case ScreenOrientation.Orientation.PORTRAIT_UP:
+    default:
+      return 0;
+  }
+}
 
 interface CompassData {
   heading: number;
@@ -69,6 +84,7 @@ export function useCompass(target: TargetLocation): CompassData {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orientationOffset, setOrientationOffset] = useState(0);
 
   const magRef = useRef({ x: 0, y: 0, z: 0 });
   const accelRef = useRef({ x: 0, y: 0, z: 0 });
@@ -250,19 +266,19 @@ export function useCompass(target: TargetLocation): CompassData {
               setTimeout(() => {
                 if (!hasMagData.current || !hasAccelData.current) {
                   console.log('Sensors not responding after 5s, trying heading subscription fallback');
-                  setupHeadingFallback();
+                  void setupHeadingFallback();
                 }
               }, 5000);
             } else if (!magAvailable && accelAvailable) {
               console.log('Magnetometer not available, using heading subscription fallback');
-              setupHeadingFallback();
+              void setupHeadingFallback();
             } else {
               console.log('Required sensors not available, using heading subscription fallback');
-              setupHeadingFallback();
+              void setupHeadingFallback();
             }
           } catch (sensorErr) {
             console.error('Error setting up sensors:', sensorErr);
-            setupHeadingFallback();
+            void setupHeadingFallback();
           }
         } else {
           setIsCalibrated(true);
@@ -297,7 +313,7 @@ export function useCompass(target: TargetLocation): CompassData {
       }
     };
 
-    setupSensors();
+    void setupSensors();
 
     return () => {
       locationSubscription?.remove();
@@ -306,6 +322,37 @@ export function useCompass(target: TargetLocation): CompassData {
       if (headingInterval) clearInterval(headingInterval);
     };
   }, [computeTiltCompensatedHeading]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    let subscription: ScreenOrientation.Subscription | null = null;
+
+    const setup = async () => {
+      try {
+        const current = await ScreenOrientation.getOrientationAsync();
+        const offset = getOrientationOffset(current);
+        setOrientationOffset(offset);
+        console.log('Initial screen orientation:', current, 'offset:', offset);
+
+        subscription = ScreenOrientation.addOrientationChangeListener((event) => {
+          const newOffset = getOrientationOffset(event.orientationInfo.orientation);
+          setOrientationOffset(newOffset);
+          console.log('Screen orientation changed:', event.orientationInfo.orientation, 'offset:', newOffset);
+        });
+      } catch (err) {
+        console.log('Screen orientation detection not available:', err);
+      }
+    };
+
+    void setup();
+
+    return () => {
+      if (subscription) {
+        ScreenOrientation.removeOrientationChangeListener(subscription);
+      }
+    };
+  }, []);
 
   const bearing = userLocation
     ? calculateBearing(
@@ -316,7 +363,9 @@ export function useCompass(target: TargetLocation): CompassData {
       )
     : 0;
 
-  const direction = (bearing - heading + 360) % 360;
+  const correctedHeading = (heading + orientationOffset + 360) % 360;
+
+  const direction = (bearing - correctedHeading + 360) % 360;
 
   const distance = userLocation
     ? calculateDistance(
@@ -328,7 +377,7 @@ export function useCompass(target: TargetLocation): CompassData {
     : 0;
 
   return {
-    heading,
+    heading: correctedHeading,
     bearing,
     direction,
     distance,
