@@ -95,9 +95,9 @@ export function useCompass(target: TargetLocation): CompassData {
     const ori = orientationRef.current;
     switch (ori) {
       case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
-        return 90;
-      case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
         return -90;
+      case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
+        return 90;
       case ScreenOrientation.Orientation.PORTRAIT_DOWN:
         return 180;
       default:
