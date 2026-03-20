@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  PlatformIOSStatic,
 } from 'react-native';
 
 import { MapPin, Navigation, Star, MapPinOff, RotateCw } from 'lucide-react-native';
@@ -129,7 +130,8 @@ export default function CompassScreen() {
     console.log('Retrying GPS...');
   }, []);
 
-  const showNoGps = gpsTimedOut || !!compass.error;
+  const isIPad = Platform.OS === 'ios' && (Platform as PlatformIOSStatic).isPad === true;
+  const showNoGps = isIPad && (gpsTimedOut || !!compass.error);
 
   if (isLoadingTarget) {
     return (
