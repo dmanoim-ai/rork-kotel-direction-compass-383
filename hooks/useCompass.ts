@@ -251,6 +251,10 @@ export function useCompass(target: TargetLocation): CompassData {
         }
 
         if (Platform.OS !== 'web') {
+          if (IS_IPAD) {
+            console.log('iPad detected – using watchHeadingAsync directly (skipping raw sensors)');
+            void setupHeadingFallback();
+          } else {
           try {
             const magAvailable = await Magnetometer.isAvailableAsync();
             const accelAvailable = await Accelerometer.isAvailableAsync();
@@ -301,6 +305,7 @@ export function useCompass(target: TargetLocation): CompassData {
           } catch (sensorErr) {
             console.error('Error setting up sensors:', sensorErr);
             void setupHeadingFallback();
+          }
           }
         } else {
           setIsCalibrated(true);
