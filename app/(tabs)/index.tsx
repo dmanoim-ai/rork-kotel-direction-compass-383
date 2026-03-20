@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,9 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
-  PlatformIOSStatic,
 } from 'react-native';
 
-import { MapPin, Navigation, Star, MapPinOff, RotateCw } from 'lucide-react-native';
+import { MapPin, Navigation, Star } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CompassArrow } from '@/components/CompassArrow';
@@ -100,85 +99,20 @@ export default function CompassScreen() {
     return t(keys[index]);
   };
 
-  const GPS_TIMEOUT_MS = 15000;
-  const [gpsTimedOut, setGpsTimedOut] = useState(false);
-  const gpsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const waitingForGps = !compass.userLocation && !compass.error;
-
-  useEffect(() => {
-    if (waitingForGps && !isLoadingTarget) {
-      gpsTimerRef.current = setTimeout(() => {
-        setGpsTimedOut(true);
-        console.log('GPS timed out after', GPS_TIMEOUT_MS, 'ms');
-      }, GPS_TIMEOUT_MS);
-    } else {
-      setGpsTimedOut(false);
-      if (gpsTimerRef.current) {
-        clearTimeout(gpsTimerRef.current);
-        gpsTimerRef.current = null;
-      }
-    }
-    return () => {
-      if (gpsTimerRef.current) {
-        clearTimeout(gpsTimerRef.current);
-      }
-    };
-  }, [waitingForGps, isLoadingTarget]);
-
-  const handleRetryGps = useCallback(() => {
-    setGpsTimedOut(false);
-    console.log('Retrying GPS...');
-  }, []);
-
-  const isIPad = Platform.OS === 'ios' && (Platform as PlatformIOSStatic).isPad === true;
-  const showNoGps = isIPad && (
-    (gpsTimedOut || !!compass.error) ||
-    compass.isGpsWeak
-  );
-
-  if (isLoadingTarget) {
+  if (isLoadingTarget || (!compass.userLocation && !compass.error)) {
     return (
       <View style={styles.container}>
         <View style={styles.loadingFullScreen}>
           <ActivityIndicator size="large" color="#FFFFFF" />
-          <Text style={styles.loadingFullScreenText}>{t('compass.loading')}</Text>
-          <Text style={styles.loadingFullScreenSubtext}>{t('compass.pleaseWait')}</Text>
-        </View>
-      </View>
-    );
-  }
-
-  if (showNoGps && !compass.userLocation) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.noGpsScreen}>
-          <View style={styles.noGpsIconContainer}>
-            <MapPinOff size={48} color="rgba(255,107,53,0.8)" />
-          </View>
-          <Text style={styles.noGpsTitle}>{t('compass.noGps')}</Text>
-          <Text style={styles.noGpsMessage}>{t('compass.noGpsMsg')}</Text>
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={handleRetryGps}
-            activeOpacity={0.7}
-            testID="retry-gps-button"
-          >
-            <RotateCw size={18} color="#FFFFFF" />
-            <Text style={styles.retryButtonText}>{t('compass.retry')}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  if (waitingForGps) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.loadingFullScreen}>
-          <ActivityIndicator size="large" color="#FFFFFF" />
-          <Text style={styles.loadingFullScreenText}>{t('compass.gettingLocation')}</Text>
-          <Text style={styles.loadingFullScreenSubtext}>{t('compass.pleaseWait')}</Text>
-          <Text style={styles.loadingHintText}>{t('compass.holdFlatHint')}</Text>
+          <Text style={styles.loadingFullScreenText}>
+            {isLoadingTarget ? t('compass.loading') : t('compass.gettingLocation')}
+          </Text>
+          <Text style={styles.loadingFullScreenSubtext}>
+            {t('compass.pleaseWait')}
+          </Text>
+          <Text style={styles.loadingHintText}>
+            {t('compass.holdFlatHint')}
+          </Text>
         </View>
       </View>
     );
@@ -420,50 +354,5 @@ const styles = StyleSheet.create({
     fontWeight: '400' as const,
     color: 'rgba(255,255,255,0.7)',
   },
-  noGpsScreen: {
-    flex: 1,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    paddingHorizontal: 40,
-  },
-  noGpsIconContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: 'rgba(255,107,53,0.12)',
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    marginBottom: 24,
-  },
-  noGpsTitle: {
-    fontSize: 22,
-    fontWeight: '600' as const,
-    color: '#FFFFFF',
-    textAlign: 'center' as const,
-    marginBottom: 12,
-  },
-  noGpsMessage: {
-    fontSize: 15,
-    fontWeight: '400' as const,
-    color: 'rgba(255,255,255,0.5)',
-    textAlign: 'center' as const,
-    lineHeight: 22,
-    marginBottom: 32,
-  },
-  retryButton: {
-    flexDirection: 'row' as const,
-    alignItems: 'center' as const,
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-  },
-  retryButtonText: {
-    fontSize: 16,
-    fontWeight: '500' as const,
-    color: '#FFFFFF',
-  },
+
 });

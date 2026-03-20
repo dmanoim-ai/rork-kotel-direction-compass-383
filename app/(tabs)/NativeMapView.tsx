@@ -77,14 +77,14 @@ export default function NativeMapView({
     if (isReady && webViewRef.current && fitBoundsRequest) {
       const uLat = userLocation?.latitude ?? 'null';
       const uLng = userLocation?.longitude ?? 'null';
-      const focusLat = selectedMapLocation?.latitude ?? targetLocation.latitude;
-      const focusLng = selectedMapLocation?.longitude ?? targetLocation.longitude;
+      const tLat = targetLocation.latitude;
+      const tLng = targetLocation.longitude;
       webViewRef.current.injectJavaScript(`
-        if (typeof fitAllBoundsExplicit === 'function') fitAllBoundsExplicit(${uLat}, ${uLng}, ${focusLat}, ${focusLng});
+        if (typeof fitAllBoundsExplicit === 'function') fitAllBoundsExplicit(${uLat}, ${uLng}, ${tLat}, ${tLng});
         true;
       `);
     }
-  }, [fitBoundsRequest, isReady, userLocation, targetLocation, selectedMapLocation]);
+  }, [fitBoundsRequest, isReady, userLocation, targetLocation]);
 
   useEffect(() => {
     if (isReady && webViewRef.current && searchCoords) {
@@ -246,8 +246,8 @@ export default function NativeMapView({
         var currentTileLayer = null;
         var userLat = ${userLocation?.latitude ?? 'null'};
         var userLng = ${userLocation?.longitude ?? 'null'};
-        var targetLat = ${selectedMapLocation?.latitude ?? targetLocation.latitude};
-        var targetLng = ${selectedMapLocation?.longitude ?? targetLocation.longitude};
+        var targetLat = ${targetLocation.latitude};
+        var targetLng = ${targetLocation.longitude};
 
         var map = L.map('map', {
           zoomControl: false,
