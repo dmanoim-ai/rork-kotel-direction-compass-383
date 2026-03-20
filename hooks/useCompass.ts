@@ -71,43 +71,66 @@ export function useCompass(target: TargetLocation): CompassData {
   const [isCalibrated, setIsCalibrated] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const smoothedHeadingRef = useRef(0);
+  const SMOOTHING_FACTOR = 0.15;
+  const orientationRef = useRef<ScreenOrientation.Orientation>(ScreenOrientation.Orientation.PORTRAIT_UP);
+  const headingSourceRef = useRef<'none' | 'os' | 'sensor'>('none');
 
   const magRef = useRef({ x: 0, y: 0, z: 0 });
   const accelRef = useRef({ x: 0, y: 0, z: 0 });
-  const smoothedHeadingRef = useRef(0);
-  const SMOOTHING_FACTOR = 0.15;
   const hasMagData = useRef(false);
   const hasAccelData = useRef(false);
-  const orientationRef = useRef<ScreenOrientation.Orientation>(ScreenOrientation.Orientation.PORTRAIT_UP);
 
-  const transformSensorData = useCallback((raw: { x: number; y: number; z: number }): { x: number; y: number; z: number } => {
+  const applySmoothing = useCallback((rawHeading: number) => {
+    const prev = smoothedHeadingRef.current;
+    let delta = rawHeading - prev;
+    if (delta > 180) delta -= 360;
+    else if (delta < -180) delta += 360;
+    const smoothed = (prev + delta * SMOOTHING_FACTOR + 360) % 360;
+    smoothedHeadingRef.current = smoothed;
+    setHeading(smoothed);
+  }, []);
+
+  const getOrientationOffset = useCallback((): number => {
     const ori = orientationRef.current;
     switch (ori) {
       case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
-        return { x: raw.y, y: -raw.x, z: raw.z };
+        return 90;
       case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
-        return { x: -raw.y, y: raw.x, z: raw.z };
+        return -90;
       case ScreenOrientation.Orientation.PORTRAIT_DOWN:
-        return { x: -raw.x, y: -raw.y, z: raw.z };
-      case ScreenOrientation.Orientation.PORTRAIT_UP:
+        return 180;
       default:
-        return { x: raw.x, y: raw.y, z: raw.z };
+        return 0;
     }
   }, []);
 
-  const computeTiltCompensatedHeading = useCallback(() => {
-    const accelTransformed = transformSensorData(accelRef.current);
-    const magTransformed = transformSensorData(magRef.current);
-    const ax = accelTransformed.x;
-    const ay = accelTransformed.y;
-    const az = accelTransformed.z;
-    const mx = magTransformed.x;
-    const my = magTransformed.y;
-    const mz = magTransformed.z;
+  const computeSensorHeading = useCallback(() => {
+    const ori = orientationRef.current;
+    let ax = accelRef.current.x;
+    let ay = accelRef.current.y;
+    let az = accelRef.current.z;
+    let mx = magRef.current.x;
+    let my = magRef.current.y;
+    let mz = magRef.current.z;
+
+    switch (ori) {
+      case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
+        [ax, ay] = [ay, -ax];
+        [mx, my] = [my, -mx];
+        break;
+      case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
+        [ax, ay] = [-ay, ax];
+        [mx, my] = [-my, mx];
+        break;
+      case ScreenOrientation.Orientation.PORTRAIT_DOWN:
+        [ax, ay] = [-ax, -ay];
+        [mx, my] = [-mx, -my];
+        break;
+    }
 
     const gravMag = Math.sqrt(ax * ax + ay * ay + az * az);
     if (gravMag < 0.1) return;
-
     const gx = ax / gravMag;
     const gy = ay / gravMag;
     const gz = az / gravMag;
@@ -115,58 +138,122 @@ export function useCompass(target: TargetLocation): CompassData {
     const ex = my * gz - mz * gy;
     const ey = mz * gx - mx * gz;
     const ez = mx * gy - my * gx;
-
     const eMag = Math.sqrt(ex * ex + ey * ey + ez * ez);
     if (eMag < 0.01) return;
-
     const enx = ex / eMag;
     const eny = ey / eMag;
     const enz = ez / eMag;
 
-    const ny = enz * gx - enx * gz;
+    const nx = gy * enz - gz * eny;
 
-    let headingRad = Math.atan2(eny, ny);
-    let headingDeg = headingRad * (180 / Math.PI);
-    headingDeg = (headingDeg + 180 + 360) % 360;
+    let headingDeg = Math.atan2(enx, nx) * (180 / Math.PI);
+    headingDeg = (headingDeg + 360) % 360;
 
-    const prev = smoothedHeadingRef.current;
-    let delta = headingDeg - prev;
-    if (delta > 180) delta -= 360;
-    else if (delta < -180) delta += 360;
-
-    const smoothed = (prev + delta * SMOOTHING_FACTOR + 360) % 360;
-    smoothedHeadingRef.current = smoothed;
-
-    setHeading(smoothed);
-  }, [transformSensorData]);
+    applySmoothing(headingDeg);
+  }, [applySmoothing]);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
+    let headingSubscription: { remove: () => void } | null = null;
     let magnetometerSubscription: { remove: () => void } | null = null;
     let accelerometerSubscription: { remove: () => void } | null = null;
     let headingInterval: ReturnType<typeof setInterval> | null = null;
+    let cancelled = false;
 
-    const getLocationWithTimeout = async (accuracy: Location.Accuracy, timeoutMs: number): Promise<Location.LocationObject | null> => {
+    const getLocationWithTimeout = async (acc: Location.Accuracy, timeoutMs: number): Promise<Location.LocationObject | null> => {
       return new Promise((resolve) => {
         const timer = setTimeout(() => {
-          console.log(`Location request timed out with accuracy ${accuracy}`);
+          console.log(`Location request timed out with accuracy ${acc}`);
           resolve(null);
         }, timeoutMs);
 
-        Location.getCurrentPositionAsync({ accuracy })
+        Location.getCurrentPositionAsync({ accuracy: acc })
           .then((loc) => {
             clearTimeout(timer);
             resolve(loc);
           })
           .catch((err) => {
             clearTimeout(timer);
-            console.error(`Location error with accuracy ${accuracy}:`, err);
+            console.error(`Location error with accuracy ${acc}:`, err);
             resolve(null);
           });
       });
     };
 
-    const setupSensors = async () => {
+    const setupOsHeading = async (): Promise<boolean> => {
+      try {
+        console.log('Setting up OS heading subscription (primary)');
+        const sub = await Location.watchHeadingAsync((headingData) => {
+          if (cancelled) return;
+          const rawHeading = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
+          if (rawHeading >= 0) {
+            const offset = getOrientationOffset();
+            const adjusted = (rawHeading + offset + 360) % 360;
+            applySmoothing(adjusted);
+            setIsCalibrated(true);
+            if (headingSourceRef.current !== 'os') {
+              headingSourceRef.current = 'os';
+              console.log('OS heading active, heading:', rawHeading.toFixed(1), 'offset:', offset);
+            }
+          }
+        });
+        headingSubscription = sub;
+        console.log('OS heading subscription established');
+        return true;
+      } catch (err) {
+        console.error('OS heading subscription failed:', err);
+        return false;
+      }
+    };
+
+    const setupSensorFallback = async () => {
+      try {
+        const magAvailable = await Magnetometer.isAvailableAsync();
+        const accelAvailable = await Accelerometer.isAvailableAsync();
+        console.log('Sensor fallback - Mag:', magAvailable, 'Accel:', accelAvailable);
+
+        if (magAvailable && accelAvailable) {
+          Magnetometer.setUpdateInterval(100);
+          Accelerometer.setUpdateInterval(100);
+
+          magnetometerSubscription = Magnetometer.addListener((data) => {
+            magRef.current = data;
+            if (!hasMagData.current) {
+              hasMagData.current = true;
+              console.log('First magnetometer data received (fallback)');
+            }
+            if (hasMagData.current && hasAccelData.current) {
+              setIsCalibrated(true);
+            }
+          });
+
+          accelerometerSubscription = Accelerometer.addListener((data) => {
+            accelRef.current = data;
+            if (!hasAccelData.current) {
+              hasAccelData.current = true;
+              console.log('First accelerometer data received (fallback)');
+            }
+          });
+
+          headingInterval = setInterval(() => {
+            if (hasMagData.current && hasAccelData.current) {
+              computeSensorHeading();
+            }
+          }, 100);
+
+          headingSourceRef.current = 'sensor';
+          console.log('Sensor fallback active');
+        } else {
+          console.error('Required sensors not available for fallback');
+          setError('Compass sensors unavailable');
+        }
+      } catch (err) {
+        console.error('Sensor fallback setup failed:', err);
+        setError('Compass sensors unavailable');
+      }
+    };
+
+    const setup = async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
@@ -233,115 +320,31 @@ export function useCompass(target: TargetLocation): CompassData {
         }
 
         if (Platform.OS !== 'web') {
-          try {
-            const magAvailable = await Magnetometer.isAvailableAsync();
-            const accelAvailable = await Accelerometer.isAvailableAsync();
-            console.log('Sensor availability - Mag:', magAvailable, 'Accel:', accelAvailable);
-
-            if (magAvailable && accelAvailable) {
-              Magnetometer.setUpdateInterval(100);
-              Accelerometer.setUpdateInterval(100);
-
-              magnetometerSubscription = Magnetometer.addListener((data: { x: number; y: number; z: number }) => {
-                magRef.current = data;
-                if (!hasMagData.current) {
-                  hasMagData.current = true;
-                  console.log('First magnetometer data received');
-                }
-                if (hasMagData.current && hasAccelData.current) {
-                  setIsCalibrated(true);
-                }
-              });
-
-              accelerometerSubscription = Accelerometer.addListener((data: { x: number; y: number; z: number }) => {
-                accelRef.current = data;
-                if (!hasAccelData.current) {
-                  hasAccelData.current = true;
-                  console.log('First accelerometer data received');
-                }
-              });
-
-              headingInterval = setInterval(() => {
-                if (hasMagData.current && hasAccelData.current) {
-                  computeTiltCompensatedHeading();
-                }
-              }, 100);
-
-              setTimeout(() => {
-                if (!hasMagData.current || !hasAccelData.current) {
-                  console.log('Sensors not responding after 5s, trying heading subscription fallback');
-                  void setupHeadingFallback();
-                }
-              }, 5000);
-            } else if (!magAvailable && accelAvailable) {
-              console.log('Magnetometer not available, using heading subscription fallback');
-              void setupHeadingFallback();
-            } else {
-              console.log('Required sensors not available, using heading subscription fallback');
-              void setupHeadingFallback();
-            }
-          } catch (sensorErr) {
-            console.error('Error setting up sensors:', sensorErr);
-            void setupHeadingFallback();
+          const osHeadingOk = await setupOsHeading();
+          if (!osHeadingOk) {
+            console.log('OS heading failed, trying raw sensor fallback');
+            await setupSensorFallback();
           }
         } else {
           setIsCalibrated(true);
         }
       } catch (err) {
-        console.error('Error setting up sensors:', err);
+        console.error('Error setting up compass:', err);
         setError('Failed to initialize sensors');
       }
     };
 
-    const setupHeadingFallback = async () => {
-      try {
-        console.log('Setting up heading subscription fallback');
-        const headingSub = await Location.watchHeadingAsync((headingData) => {
-          const rawHeading = headingData.trueHeading >= 0 ? headingData.trueHeading : headingData.magHeading;
-          if (rawHeading >= 0) {
-            const ori = orientationRef.current;
-            let orientationOffset = 0;
-            switch (ori) {
-              case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
-                orientationOffset = 90;
-                break;
-              case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
-                orientationOffset = -90;
-                break;
-              case ScreenOrientation.Orientation.PORTRAIT_DOWN:
-                orientationOffset = 180;
-                break;
-              default:
-                orientationOffset = 0;
-            }
-            const newHeading = (rawHeading + orientationOffset + 360) % 360;
-            const prev = smoothedHeadingRef.current;
-            let delta = newHeading - prev;
-            if (delta > 180) delta -= 360;
-            else if (delta < -180) delta += 360;
-            const smoothed = (prev + delta * SMOOTHING_FACTOR + 360) % 360;
-            smoothedHeadingRef.current = smoothed;
-            setHeading(smoothed);
-            setIsCalibrated(true);
-          }
-        });
-        locationSubscription = headingSub as unknown as Location.LocationSubscription;
-        console.log('Heading fallback active');
-      } catch (headingErr) {
-        console.error('Heading fallback failed:', headingErr);
-        setError('Compass sensors unavailable');
-      }
-    };
-
-    void setupSensors();
+    void setup();
 
     return () => {
+      cancelled = true;
       locationSubscription?.remove();
+      headingSubscription?.remove();
       magnetometerSubscription?.remove();
       accelerometerSubscription?.remove();
       if (headingInterval) clearInterval(headingInterval);
     };
-  }, [computeTiltCompensatedHeading]);
+  }, [applySmoothing, getOrientationOffset, computeSensorHeading]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
