@@ -77,14 +77,14 @@ export default function NativeMapView({
     if (isReady && webViewRef.current && fitBoundsRequest) {
       const uLat = userLocation?.latitude ?? 'null';
       const uLng = userLocation?.longitude ?? 'null';
-      const focusLat = selectedMapLocation?.latitude ?? targetLocation.latitude;
-      const focusLng = selectedMapLocation?.longitude ?? targetLocation.longitude;
+      const tLat = targetLocation.latitude;
+      const tLng = targetLocation.longitude;
       webViewRef.current.injectJavaScript(`
-        if (typeof fitAllBoundsExplicit === 'function') fitAllBoundsExplicit(${uLat}, ${uLng}, ${focusLat}, ${focusLng});
+        if (typeof fitAllBoundsExplicit === 'function') fitAllBoundsExplicit(${uLat}, ${uLng}, ${tLat}, ${tLng});
         true;
       `);
     }
-  }, [fitBoundsRequest, isReady, userLocation, targetLocation, selectedMapLocation]);
+  }, [fitBoundsRequest, isReady, userLocation, targetLocation]);
 
   useEffect(() => {
     if (isReady && webViewRef.current && searchCoords) {
@@ -342,9 +342,7 @@ export default function NativeMapView({
         }
 
         function fitAllBounds() {
-          var focusLat = selectedMarker ? selectedMarker.getLatLng().lat : targetLat;
-          var focusLng = selectedMarker ? selectedMarker.getLatLng().lng : targetLng;
-          fitAllBoundsExplicit(userLat, userLng, focusLat, focusLng);
+          fitAllBoundsExplicit(userLat, userLng, targetLat, targetLng);
         }
 
         function fitAllBoundsExplicit(uLat, uLng, tLat, tLng) {
