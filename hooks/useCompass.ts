@@ -1,8 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Magnetometer, Accelerometer } from 'expo-sensors';
 import { Location as TargetLocation } from '@/constants/locations';
+
+const IS_IPAD = Platform.OS === 'ios' && (Platform as { isPad?: boolean }).isPad === true;
+
+function getOrientationOffset(orientation: ScreenOrientation.Orientation): number {
+  switch (orientation) {
+    case ScreenOrientation.Orientation.LANDSCAPE_LEFT:
+      return 90;
+    case ScreenOrientation.Orientation.LANDSCAPE_RIGHT:
+      return -90;
+    case ScreenOrientation.Orientation.PORTRAIT_DOWN:
+      return 180;
+    default:
+      return 0;
+  }
+}
 
 interface CompassData {
   heading: number;
@@ -76,6 +92,7 @@ export function useCompass(target: TargetLocation): CompassData {
   const SMOOTHING_FACTOR = 0.15;
   const hasMagData = useRef(false);
   const hasAccelData = useRef(false);
+  const [orientationOffset, setOrientationOffset] = useState(0);
 
   const computeTiltCompensatedHeading = useCallback(() => {
     const ax = accelRef.current.x;
@@ -118,6 +135,27 @@ export function useCompass(target: TargetLocation): CompassData {
     smoothedHeadingRef.current = smoothed;
 
     setHeading(smoothed);
+  }, []);
+
+  useEffect(() => {
+    if (!IS_IPAD || Platform.OS === 'web') return;
+
+    console.log('iPad detected – setting up orientation tracking for compass correction');
+    ScreenOrientation.getOrientationAsync().then((o) => {
+      const offset = getOrientationOffset(o);
+      console.log('iPad initial orientation:', o, 'offset:', offset);
+      setOrientationOffset(offset);
+    }).catch((e) => console.log('Failed to get iPad orientation:', e));
+
+    const sub = ScreenOrientation.addOrientationChangeListener((event) => {
+      const offset = getOrientationOffset(event.orientationInfo.orientation);
+      console.log('iPad orientation changed:', event.orientationInfo.orientation, 'offset:', offset);
+      setOrientationOffset(offset);
+    });
+
+    return () => {
+      ScreenOrientation.removeOrientationChangeListener(sub);
+    };
   }, []);
 
   useEffect(() => {
@@ -307,6 +345,10 @@ export function useCompass(target: TargetLocation): CompassData {
     };
   }, [computeTiltCompensatedHeading]);
 
+  const adjustedHeading = IS_IPAD
+    ? (heading + orientationOffset + 360) % 360
+    : heading;
+
   const bearing = userLocation
     ? calculateBearing(
         userLocation.latitude,
@@ -316,7 +358,7 @@ export function useCompass(target: TargetLocation): CompassData {
       )
     : 0;
 
-  const direction = (bearing - heading + 360) % 360;
+  const direction = (bearing - adjustedHeading + 360) % 360;
 
   const distance = userLocation
     ? calculateDistance(
@@ -328,7 +370,7 @@ export function useCompass(target: TargetLocation): CompassData {
     : 0;
 
   return {
-    heading,
+    heading: adjustedHeading,
     bearing,
     direction,
     distance,
