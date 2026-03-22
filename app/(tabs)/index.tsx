@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,8 +9,9 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import * as Cellular from 'expo-cellular';
 
-import { MapPin, Navigation, Star } from 'lucide-react-native';
+import { MapPin, Navigation, Star, WifiOff } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CompassArrow } from '@/components/CompassArrow';
@@ -26,6 +27,8 @@ import { useFavourites } from '@/context/FavouritesContext';
 const { width } = Dimensions.get('window');
 const COMPASS_SIZE = Math.min(width * 0.88, 360);
 
+const IS_IPAD = Platform.OS === 'ios' && (Platform as { isPad?: boolean }).isPad === true;
+
 export default function CompassScreen() {
   const insets = useSafeAreaInsets();
   const { targetLocation, isLoading: isLoadingTarget } = useTargetLocation();
@@ -34,6 +37,34 @@ export default function CompassScreen() {
   const settingsCheck = useSettingsCheck();
   const { t, distanceUnit } = useLanguage();
   const { addFavourite, isFavourite } = useFavourites();
+
+  const [isWifiOnlyiPad, setIsWifiOnlyiPad] = useState<boolean>(false);
+  const [iPadCheckDone, setiPadCheckDone] = useState<boolean>(!IS_IPAD);
+
+  useEffect(() => {
+    if (!IS_IPAD || Platform.OS === 'web') {
+      setiPadCheckDone(true);
+      return;
+    }
+    void (async () => {
+      try {
+        const carrier = await Cellular.getCarrierNameAsync();
+        const generation = await Cellular.getCellularGenerationAsync();
+        console.log('[iPad cellular check] carrier:', carrier, 'generation:', generation);
+        const hasCellular = (carrier !== null && carrier !== '') ||
+          (generation !== null && generation !== Cellular.CellularGeneration.UNKNOWN);
+        if (!hasCellular) {
+          console.log('[iPad cellular check] WiFi-only iPad detected');
+          setIsWifiOnlyiPad(true);
+        }
+      } catch (e) {
+        console.log('[iPad cellular check] error, assuming WiFi-only:', e);
+        setIsWifiOnlyiPad(true);
+      } finally {
+        setiPadCheckDone(true);
+      }
+    })();
+  }, []);
 
   const alreadySaved = isFavourite(targetLocation.latitude, targetLocation.longitude);
 
@@ -98,6 +129,33 @@ export default function CompassScreen() {
     const index = Math.round(degrees / 45) % 8;
     return t(keys[index]);
   };
+
+  if (!iPadCheckDone) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingFullScreen}>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text style={styles.loadingFullScreenText}>
+            {t('compass.loading')}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (isWifiOnlyiPad) {
+    return (
+      <View style={styles.container}>
+        <View style={[styles.wifiOnlyScreen, { paddingTop: insets.top + 40 }]}>
+          <View style={styles.wifiOnlyIconContainer}>
+            <WifiOff size={64} color="#FF6B35" />
+          </View>
+          <Text style={styles.wifiOnlyTitle}>{t('compass.wifiOnlyTitle')}</Text>
+          <Text style={styles.wifiOnlyMessage}>{t('compass.wifiOnlyiPad')}</Text>
+        </View>
+      </View>
+    );
+  }
 
   if (isLoadingTarget || (!compass.userLocation && !compass.error)) {
     return (
@@ -333,6 +391,35 @@ const styles = StyleSheet.create({
     marginTop: 24,
     textAlign: 'center',
     fontStyle: 'italic',
+  },
+  wifiOnlyScreen: {
+    flex: 1,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingHorizontal: 40,
+  },
+  wifiOnlyIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 107, 53, 0.12)',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginBottom: 32,
+  },
+  wifiOnlyTitle: {
+    color: '#FF6B35',
+    fontSize: 24,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+    marginBottom: 16,
+  },
+  wifiOnlyMessage: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 17,
+    fontWeight: '400' as const,
+    textAlign: 'center' as const,
+    lineHeight: 26,
   },
   saveButton: {
     position: 'absolute' as const,
