@@ -192,14 +192,59 @@ export function useCompass(target: TargetLocation): CompassData {
           return;
         }
 
-        let location = await getLocationWithTimeout(Location.Accuracy.High, 8000);
-        if (!location) {
-          console.log('Falling back to Balanced accuracy');
-          location = await getLocationWithTimeout(Location.Accuracy.Balanced, 8000);
+        if (Platform.OS === 'android') {
+          try {
+            const enabled = await Location.hasServicesEnabledAsync();
+            console.log('Android location services enabled:', enabled);
+            if (!enabled) {
+              setError('Location services are disabled. Please enable Location in Settings.');
+              console.log('Android: Location services disabled, prompting user');
+            }
+          } catch (serviceCheckErr) {
+            console.log('Android: Could not check location services:', serviceCheckErr);
+          }
         }
-        if (!location) {
-          console.log('Falling back to Low accuracy');
-          location = await getLocationWithTimeout(Location.Accuracy.Low, 5000);
+
+        if (Platform.OS === 'android') {
+          try {
+            const lastKnown = await Location.getLastKnownPositionAsync();
+            if (lastKnown) {
+              console.log('Android: Got last known location immediately:', lastKnown.coords.latitude, lastKnown.coords.longitude);
+              setUserLocation({
+                latitude: lastKnown.coords.latitude,
+                longitude: lastKnown.coords.longitude,
+              });
+              setAccuracy(lastKnown.coords.accuracy ?? null);
+            } else {
+              console.log('Android: No last known location cached');
+            }
+          } catch (lastKnownErr) {
+            console.log('Android: getLastKnownPositionAsync failed:', lastKnownErr);
+          }
+        }
+
+        let location: Location.LocationObject | null = null;
+        if (Platform.OS === 'android') {
+          console.log('Android: Starting with Balanced accuracy (WiFi/cell/GPS fusion)');
+          location = await getLocationWithTimeout(Location.Accuracy.Balanced, 10000);
+          if (!location) {
+            console.log('Android: Balanced timed out, trying Low accuracy');
+            location = await getLocationWithTimeout(Location.Accuracy.Low, 8000);
+          }
+          if (!location) {
+            console.log('Android: Low timed out, trying High accuracy as last resort');
+            location = await getLocationWithTimeout(Location.Accuracy.High, 8000);
+          }
+        } else {
+          location = await getLocationWithTimeout(Location.Accuracy.High, 8000);
+          if (!location) {
+            console.log('Falling back to Balanced accuracy');
+            location = await getLocationWithTimeout(Location.Accuracy.Balanced, 8000);
+          }
+          if (!location) {
+            console.log('Falling back to Low accuracy');
+            location = await getLocationWithTimeout(Location.Accuracy.Low, 5000);
+          }
         }
 
         if (location) {
@@ -208,18 +253,21 @@ export function useCompass(target: TargetLocation): CompassData {
             longitude: location.coords.longitude,
           });
           setAccuracy(location.coords.accuracy ?? null);
-          console.log('Got initial location:', location.coords.latitude, location.coords.longitude);
+          console.log('Got initial location:', location.coords.latitude, location.coords.longitude, 'accuracy:', location.coords.accuracy);
         } else {
           console.error('Could not get initial location at any accuracy level');
         }
 
+        const watchAccuracy = Platform.OS === 'android' ? Location.Accuracy.Balanced : Location.Accuracy.Balanced;
+        const watchFallbackAccuracy = Platform.OS === 'android' ? Location.Accuracy.Low : Location.Accuracy.Low;
         try {
           locationSubscription = await Location.watchPositionAsync(
             {
-              accuracy: Location.Accuracy.Balanced,
-              timeInterval: 2000,
+              accuracy: watchAccuracy,
+              timeInterval: Platform.OS === 'android' ? 3000 : 2000,
               distanceInterval: 3,
-            },
+              mayShowUserSettingsDialog: Platform.OS === 'android',
+            } as Location.LocationOptions & { mayShowUserSettingsDialog?: boolean },
             (loc) => {
               setUserLocation({
                 latitude: loc.coords.latitude,
@@ -228,12 +276,13 @@ export function useCompass(target: TargetLocation): CompassData {
               setAccuracy(loc.coords.accuracy ?? null);
             }
           );
+          console.log('Location watch started with accuracy:', watchAccuracy);
         } catch (watchErr) {
           console.error('Error watching location:', watchErr);
           try {
             locationSubscription = await Location.watchPositionAsync(
               {
-                accuracy: Location.Accuracy.Low,
+                accuracy: watchFallbackAccuracy,
                 timeInterval: 3000,
                 distanceInterval: 10,
               },
