@@ -174,6 +174,7 @@ export default function TargetScreen() {
   const [reverseGeoName, setReverseGeoName] = useState<string | null>(null);
   const [mapStyle] = useState<'streets' | 'satellite'>('streets');
   const [fitBoundsCounter, setFitBoundsCounter] = useState(0);
+  const [countryCitiesOffset, setCountryCitiesOffset] = useState(0);
 
   useEffect(() => {
     const getLocation = async (): Promise<void> => {
@@ -256,16 +257,9 @@ export default function TargetScreen() {
     void getLocation();
   }, []);
 
-  const countryCitiesQuery = useInfiniteQuery({
-    queryKey: ['countryCities', userCountryCode],
-    queryFn: async ({ pageParam = 0 }) => {
-      return fetchCitiesByCountry(userCountryCode!, PAGE_SIZE, pageParam as number);
-    },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      if (!lastPage.hasMore) return undefined;
-      return allPages.length * PAGE_SIZE;
-    },
+  const countryCitiesQuery = useQuery({
+    queryKey: ['countryCities', userCountryCode, countryCitiesOffset],
+    queryFn: () => fetchCitiesByCountry(userCountryCode!, PAGE_SIZE, countryCitiesOffset),
     enabled: !!userCountryCode && !!userLocation,
     staleTime: 1000 * 60 * 30,
   });
@@ -273,7 +267,7 @@ export default function TargetScreen() {
   const countryCities = useMemo(() => {
     if (!userLocation) return [];
 
-    const apiCities: City[] = countryCitiesQuery.data?.pages.flatMap(p => p.cities) ?? [];
+    const apiCities: City[] = countryCitiesQuery.data?.cities ?? [];
     const fallbackCities = apiCities.length > 0 ? apiCities : WORLD_CITIES.filter(city => {
       if (!userCountry) return false;
       const countryNormalized = userCountry.toLowerCase();
@@ -296,8 +290,16 @@ export default function TargetScreen() {
   }, [userLocation, userCountry, countryCitiesQuery.data]);
 
   const countryCitiesTotalCount = useMemo(() => {
-    return countryCitiesQuery.data?.pages[0]?.totalCount ?? 0;
+    return countryCitiesQuery.data?.totalCount ?? 0;
   }, [countryCitiesQuery.data]);
+
+  const countryCitiesHasMore = useMemo(() => {
+    return countryCitiesQuery.data?.hasMore ?? false;
+  }, [countryCitiesQuery.data]);
+
+  const countryCitiesHasPrevious = useMemo(() => {
+    return countryCitiesOffset > 0;
+  }, [countryCitiesOffset]);
 
   const countryLandmarks = useMemo(() => {
     if (!userCountry || !userLocation) return [];
@@ -750,12 +752,42 @@ export default function TargetScreen() {
                       )}
                     </TouchableOpacity>
                   ))}
-                  {renderLoadMoreButton(
-                    countryCitiesQuery.hasNextPage,
-                    countryCitiesQuery.isFetchingNextPage,
-                    () => countryCitiesQuery.fetchNextPage(),
-                    countryCitiesTotalCount,
-                    countryCities.length,
+                  {(countryCitiesHasMore || countryCitiesHasPrevious) && (
+                    <View style={styles.paginationRow}>
+                      {countryCitiesHasPrevious && (
+                        <TouchableOpacity
+                          style={styles.paginationButton}
+                          onPress={() => setCountryCitiesOffset(Math.max(0, countryCitiesOffset - PAGE_SIZE))}
+                          disabled={countryCitiesQuery.isFetching}
+                          testID="country-cities-previous-button"
+                        >
+                          {countryCitiesQuery.isFetching && !countryCitiesHasMore ? (
+                            <ActivityIndicator size="small" color={Colors.compass.gold} />
+                          ) : (
+                            <Text style={styles.loadMoreText}>{t('target.showPrevious')}</Text>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                      {countryCitiesHasMore && (
+                        <TouchableOpacity
+                          style={styles.paginationButton}
+                          onPress={() => setCountryCitiesOffset(countryCitiesOffset + PAGE_SIZE)}
+                          disabled={countryCitiesQuery.isFetching}
+                          testID="country-cities-next-button"
+                        >
+                          {countryCitiesQuery.isFetching && countryCitiesHasMore ? (
+                            <ActivityIndicator size="small" color={Colors.compass.gold} />
+                          ) : (
+                            <>
+                              <ChevronDown size={16} color={Colors.compass.gold} />
+                              <Text style={styles.loadMoreText}>
+                                {t('target.loadNext')} ({Math.min(countryCitiesOffset + PAGE_SIZE, countryCitiesTotalCount).toLocaleString()} / {countryCitiesTotalCount.toLocaleString()})
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   )}
                 </>
               )}
