@@ -109,6 +109,40 @@ export async function fetchCitiesByCountry(
   }
 }
 
+export async function fetchCitiesByCountryName(
+  countryName: string,
+  limit: number = 30,
+  offset: number = 0
+): Promise<PaginatedCityResult> {
+  try {
+    const whereClause = `search(cou_name_en,"${countryName.trim()}")`;
+    const url = `${BASE_URL}?where=${encodeURIComponent(whereClause)}&order_by=${encodeURIComponent('name ASC')}&limit=${limit}&offset=${offset}`;
+    console.log('Fetching cities by country name:', url);
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error('Cities by country name API error:', response.status);
+      return { cities: [], totalCount: 0, hasMore: false };
+    }
+
+    const data: ApiResponse = await response.json();
+    console.log(`Found ${data.total_count} cities in "${countryName}", returning ${data.results.length} (offset: ${offset})`);
+
+    const cities = data.results
+      .filter((r) => r.coordinates)
+      .map(recordToCity);
+
+    return {
+      cities,
+      totalCount: data.total_count,
+      hasMore: offset + limit < data.total_count,
+    };
+  } catch (error) {
+    console.error('Error fetching cities by country name:', error);
+    return { cities: [], totalCount: 0, hasMore: false };
+  }
+}
+
 export async function fetchNearbyCities(
   lat: number,
   lon: number,

@@ -23,7 +23,7 @@ import NativeMapView from './NativeMapView';
 import { useTargetLocation } from '@/context/TargetLocationContext';
 import { Location, KOTEL } from '@/constants/locations';
 import { City, WORLD_CITIES } from '@/constants/cities';
-import { searchCitiesApi, fetchCitiesByCountry, fetchTopCities } from '@/services/citiesApi';
+import { searchCitiesApi, fetchCitiesByCountry, fetchCitiesByCountryName, fetchTopCities } from '@/services/citiesApi';
 import Colors from '@/constants/colors';
 import { useLanguage } from '@/context/LanguageContext';
 import type { DistanceUnit } from '@/context/LanguageContext';
@@ -258,9 +258,14 @@ export default function TargetScreen() {
   }, []);
 
   const countryCitiesQuery = useQuery({
-    queryKey: ['countryCities', userCountryCode, countryCitiesOffset],
-    queryFn: () => fetchCitiesByCountry(userCountryCode!, PAGE_SIZE, countryCitiesOffset),
-    enabled: !!userCountryCode && !!userLocation,
+    queryKey: ['countryCities', userCountryCode, userCountry, countryCitiesOffset],
+    queryFn: () => {
+      if (userCountryCode) {
+        return fetchCitiesByCountry(userCountryCode, PAGE_SIZE, countryCitiesOffset);
+      }
+      return fetchCitiesByCountryName(userCountry!, PAGE_SIZE, countryCitiesOffset);
+    },
+    enabled: (!!userCountryCode || !!userCountry) && !!userLocation,
     staleTime: 1000 * 60 * 30,
   });
 
