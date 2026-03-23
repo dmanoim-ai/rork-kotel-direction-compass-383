@@ -82,7 +82,8 @@ export async function fetchCitiesByCountry(
   offset: number = 0
 ): Promise<PaginatedCityResult> {
   try {
-    const url = `${BASE_URL}?where=country_code="${encodeURIComponent(countryCode)}"&order_by=${encodeURIComponent('name ASC')}&limit=${limit}&offset=${offset}`;
+    const whereClause = `country_code="${countryCode.trim()}"`;
+    const url = `${BASE_URL}?where=${encodeURIComponent(whereClause)}&order_by=${encodeURIComponent('name ASC')}&limit=${limit}&offset=${offset}`;
     console.log('Fetching cities by country:', url);
 
     const response = await fetch(url);
