@@ -403,7 +403,13 @@ export default function TargetScreen() {
   }, [filteredCities]);
 
   const sortedFavourites = useMemo(() => {
-    return [...favourites].sort((a, b) => a.name.localeCompare(b.name));
+    return [...favourites].sort((a, b) => {
+      const aIsKotel = a.id === 'kotel' || a.name.toLowerCase().includes('kotel') || a.name.toLowerCase().includes('western wall');
+      const bIsKotel = b.id === 'kotel' || b.name.toLowerCase().includes('kotel') || b.name.toLowerCase().includes('western wall');
+      if (aIsKotel && !bIsKotel) return -1;
+      if (!aIsKotel && bIsKotel) return 1;
+      return a.name.localeCompare(b.name);
+    });
   }, [favourites]);
 
   const topCitiesTotalCount = useMemo(() => {
