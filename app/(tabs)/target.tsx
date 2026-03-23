@@ -11,7 +11,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapPin, Navigation, Check, RotateCcw, Search, MapPinned, Building2, Map, ChevronDown, Globe, Star, Trash2 } from 'lucide-react-native';
@@ -167,6 +167,7 @@ export default function TargetScreen() {
   const [debouncedCitySearch, setDebouncedCitySearch] = useState('');
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [userCountryCode, setUserCountryCode] = useState<string | null>(null);
+  const [searchOffset, setSearchOffset] = useState(0);
   const [mapSearch, setMapSearch] = useState('');
   const [mapSearching, setMapSearching] = useState(false);
   const [mapSearchCoords, setMapSearchCoords] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -291,7 +292,7 @@ export default function TargetScreen() {
       country: city.country,
       distance: calculateDistance(userLocation.latitude, userLocation.longitude, city.latitude, city.longitude),
       isCity: true as const,
-    })).sort((a, b) => a.distance - b.distance);
+    })).sort((a, b) => a.name.localeCompare(b.name));
   }, [userLocation, userCountry, countryCitiesQuery.data]);
 
   const countryCitiesTotalCount = useMemo(() => {
@@ -318,7 +319,7 @@ export default function TargetScreen() {
     if (!userLocation) return POPULAR_LANDMARKS.slice(0, 20).map(loc => ({ ...loc, isCity: false as const }));
     
     if (userCountry && (countryCities.length > 0 || countryLandmarks.length > 0)) {
-      return { cities: countryCities.slice(0, 15), landmarks: countryLandmarks.slice(0, 20) };
+      return { cities: countryCities, landmarks: countryLandmarks.slice(0, 20) };
     }
     
     const withDistance = POPULAR_LANDMARKS.map(loc => ({
@@ -340,27 +341,32 @@ export default function TargetScreen() {
     }, 400);
   }, []);
 
-  const citySearchQuery = useInfiniteQuery({
-    queryKey: ['citySearch', debouncedCitySearch],
-    queryFn: async ({ pageParam = 0 }) => {
-      return searchCitiesApi(debouncedCitySearch, PAGE_SIZE, pageParam as number);
-    },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      if (!lastPage.hasMore) return undefined;
-      return allPages.length * PAGE_SIZE;
-    },
+  useEffect(() => {
+    setSearchOffset(0);
+  }, [debouncedCitySearch]);
+
+  const citySearchQuery = useQuery({
+    queryKey: ['citySearch', debouncedCitySearch, searchOffset],
+    queryFn: () => searchCitiesApi(debouncedCitySearch, PAGE_SIZE, searchOffset),
     enabled: debouncedCitySearch.length >= 2,
     staleTime: 1000 * 60 * 5,
   });
 
   const filteredCities = useMemo(() => {
-    return citySearchQuery.data?.pages.flatMap(p => p.cities) ?? [];
+    return citySearchQuery.data?.cities ?? [];
   }, [citySearchQuery.data]);
 
   const searchTotalCount = useMemo(() => {
-    return citySearchQuery.data?.pages[0]?.totalCount ?? 0;
+    return citySearchQuery.data?.totalCount ?? 0;
   }, [citySearchQuery.data]);
+
+  const searchHasMore = useMemo(() => {
+    return citySearchQuery.data?.hasMore ?? false;
+  }, [citySearchQuery.data]);
+
+  const searchHasPrevious = useMemo(() => {
+    return searchOffset > 0;
+  }, [searchOffset]);
 
   const topCitiesQuery = useInfiniteQuery({
     queryKey: ['topCities'],
@@ -388,6 +394,10 @@ export default function TargetScreen() {
     if (filteredCities.length === 0) return [];
     return [...filteredCities].sort((a, b) => a.name.localeCompare(b.name));
   }, [filteredCities]);
+
+  const sortedFavourites = useMemo(() => {
+    return [...favourites].sort((a, b) => a.name.localeCompare(b.name));
+  }, [favourites]);
 
   const topCitiesTotalCount = useMemo(() => {
     return topCitiesQuery.data?.pages[0]?.totalCount ?? 0;
@@ -585,7 +595,7 @@ export default function TargetScreen() {
           <>
             <ChevronDown size={16} color={Colors.compass.gold} />
             <Text style={styles.loadMoreText}>
-              {t('target.loadMore')} ({loadedCount.toLocaleString()} / {totalCount.toLocaleString()})
+              {t('target.loadNext')} ({loadedCount.toLocaleString()} / {totalCount.toLocaleString()})
             </Text>
           </>
         )}
@@ -647,7 +657,7 @@ export default function TargetScreen() {
                     <Star size={16} color="#FFD700" fill="#FFD700" />
                     <Text style={styles.sectionTitle}>{t('fav.title')}</Text>
                   </View>
-                  {favourites.map((fav) => (
+                  {sortedFavourites.map((fav) => (
                     <TouchableOpacity
                       key={fav.id}
                       style={[
@@ -861,12 +871,45 @@ export default function TargetScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
-                  {renderLoadMoreButton(
-                    citySearchQuery.hasNextPage,
-                    citySearchQuery.isFetchingNextPage,
-                    () => citySearchQuery.fetchNextPage(),
-                    searchTotalCount,
-                    filteredCities.length,
+                  {(searchHasMore || searchHasPrevious) && (
+                    <View style={styles.paginationRow}>
+                      {searchHasPrevious && (
+                        <TouchableOpacity
+                          style={styles.paginationButton}
+                          onPress={() => setSearchOffset(Math.max(0, searchOffset - PAGE_SIZE))}
+                          disabled={citySearchQuery.isFetching}
+                          testID="show-previous-button"
+                        >
+                          {citySearchQuery.isFetching && !searchHasMore ? (
+                            <ActivityIndicator size="small" color={Colors.compass.gold} />
+                          ) : (
+                            <Text style={styles.loadMoreText}>{t('target.showPrevious')}</Text>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                      {searchHasMore && (
+                        <TouchableOpacity
+                          style={styles.paginationButton}
+                          onPress={() => setSearchOffset(searchOffset + PAGE_SIZE)}
+                          disabled={citySearchQuery.isFetching}
+                          testID="show-next-button"
+                        >
+                          {citySearchQuery.isFetching && searchHasMore ? (
+                            <ActivityIndicator size="small" color={Colors.compass.gold} />
+                          ) : (
+                            <>
+                              <ChevronDown size={16} color={Colors.compass.gold} />
+                              <Text style={styles.loadMoreText}>
+                                {t('target.showNext')} ({Math.min(searchOffset + PAGE_SIZE, searchTotalCount).toLocaleString()} / {searchTotalCount.toLocaleString()})
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                      {!searchHasMore && searchHasPrevious && (
+                        <Text style={styles.endOfResultsText}>{t('target.resultsFound').replace(/^/, `${searchTotalCount.toLocaleString()} `)}</Text>
+                      )}
+                    </View>
                   )}
                 </>
               )}
@@ -1614,5 +1657,32 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     textTransform: 'uppercase' as const,
     letterSpacing: 0.5,
+  },
+  paginationRow: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  paginationButton: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(212, 175, 55, 0.08)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(212, 175, 55, 0.25)',
+    minWidth: 120,
+  },
+  endOfResultsText: {
+    fontSize: 12,
+    color: Colors.compass.textSecondary,
+    textAlign: 'center' as const,
+    flex: 1,
+    paddingVertical: 4,
   },
 });
